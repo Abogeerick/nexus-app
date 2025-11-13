@@ -1,0 +1,330 @@
+// This is your Prisma schema file for Nexus Finance Analyst
+// Documentation: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER MANAGEMENT
+// ============================================
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String?
+  password          String
+  role              UserRole  @default(USER)
+  emailVerified     Boolean   @default(false)
+  emailVerifyToken  String?   @unique
+  passwordResetToken String?  @unique
+  passwordResetExpiry DateTime?
+  baseCurrency      String    @default("KES") // User's preferred currency
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  accounts          Account[]
+  assets            Asset[]
+  transactions      Transaction[]
+  goals             Goal[]
+  priceAlerts       PriceAlert[]
+  netWorthHistory   NetWorthSnapshot[]
+
+  @@index([email])
+  @@map("users")
+}
+
+// ============================================
+// FINANCIAL ACCOUNTS
+// ============================================
+
+enum AccountType {
+  BANK
+  MPESA
+  CASH
+  INVESTMENT
+  CRYPTO_WALLET
+  CUSTOM
+}
+
+model Account {
+  id              String      @id @default(cuid())
+  userId          String
+  name            String
+  type            AccountType
+  currency        String      @default("KES")
+  balance         Float       @default(0)
+  institutionName String?     // e.g., "Equity Bank", "Safaricom Mpesa"
+  accountNumber   String?     // Masked account number
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions    Transaction[]
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+// ============================================
+// ASSETS (Stocks, Crypto, Custom)
+// ============================================
+
+enum AssetType {
+  STOCK
+  CRYPTO
+  BOND
+  REAL_ESTATE
+  COMMODITY
+  CUSTOM
+}
+
+model Asset {
+  id              String      @id @default(cuid())
+  userId          String
+  type            AssetType
+  symbol          String      // e.g., "AAPL", "BTC", custom identifier
+  name            String      // e.g., "Apple Inc.", "Bitcoin"
+  quantity        Float
+  purchasePrice   Float       // Average purchase price per unit
+  purchaseDate    DateTime?
+  currency        String      @default("USD")
+  exchange        String?     // e.g., "NYSE", "NASDAQ", "Binance"
+  notes           String?     @db.Text
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  priceHistory    AssetPrice[]
+  transactions    AssetTransaction[]
+
+  @@index([userId, type])
+  @@index([symbol])
+  @@map("assets")
+}
+
+// Price history for assets
+model AssetPrice {
+  id        String   @id @default(cuid())
+  assetId   String
+  price     Float
+  currency  String
+  timestamp DateTime @default(now())
+
+  // Relations
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, timestamp])
+  @@map("asset_prices")
+}
+
+// ============================================
+// TRANSACTIONS
+// ============================================
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER
+  PAYMENT
+  INCOME
+  EXPENSE
+}
+
+model Transaction {
+  id              String          @id @default(cuid())
+  userId          String
+  accountId       String?
+  type            TransactionType
+  amount          Float
+  currency        String          @default("KES")
+  description     String?
+  category        String?         // e.g., "Groceries", "Salary", "Mpesa Transfer"
+  transactionDate DateTime        @default(now())
+  source          String?         // e.g., "MPESA_CSV", "MANUAL", "BANK_CSV"
+  metadata        Json?           // Store additional data like Mpesa transaction code
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account         Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([userId, transactionDate])
+  @@index([accountId])
+  @@map("transactions")
+}
+
+// Asset-specific transactions (buy/sell)
+enum AssetTransactionType {
+  BUY
+  SELL
+}
+
+model AssetTransaction {
+  id              String               @id @default(cuid())
+  assetId         String
+  type            AssetTransactionType
+  quantity        Float
+  pricePerUnit    Float
+  totalAmount     Float
+  currency        String               @default("USD")
+  fees            Float                @default(0)
+  transactionDate DateTime
+  notes           String?              @db.Text
+  createdAt       DateTime             @default(now())
+
+  // Relations
+  asset           Asset                @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, transactionDate])
+  @@map("asset_transactions")
+}
+
+// ============================================
+// FINANCIAL GOALS
+// ============================================
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model Goal {
+  id                    String     @id @default(cuid())
+  userId                String
+  name                  String
+  targetAmount          Float
+  currentAmount         Float      @default(0)
+  currency              String     @default("KES")
+  targetDate            DateTime
+  monthlyContribution   Float      @default(0)
+  description           String?    @db.Text
+  status                GoalStatus @default(ACTIVE)
+  
+  // Monte Carlo simulation results
+  successProbability    Float?     // Probability of reaching goal (0-100)
+  lastSimulatedAt       DateTime?
+  
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  // Relations
+  user                  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("goals")
+}
+
+// ============================================
+// NET WORTH TRACKING
+// ============================================
+
+model NetWorthSnapshot {
+  id              String   @id @default(cuid())
+  userId          String
+  totalNetWorth   Float    // In user's base currency
+  currency        String   @default("KES")
+  
+  // Breakdown by asset class
+  cashBalance     Float    @default(0)
+  investmentValue Float    @default(0)
+  cryptoValue     Float    @default(0)
+  otherAssets     Float    @default(0)
+  
+  snapshotDate    DateTime @default(now())
+
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, snapshotDate])
+  @@map("net_worth_snapshots")
+}
+
+// ============================================
+// PRICE ALERTS
+// ============================================
+
+enum AlertCondition {
+  ABOVE
+  BELOW
+}
+
+model PriceAlert {
+  id          String         @id @default(cuid())
+  userId      String
+  assetSymbol String
+  assetName   String
+  condition   AlertCondition
+  targetPrice Float
+  currency    String         @default("USD")
+  isActive    Boolean        @default(true)
+  triggered   Boolean        @default(false)
+  triggeredAt DateTime?
+  createdAt   DateTime       @default(now())
+
+  // Relations
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([assetSymbol])
+  @@map("price_alerts")
+}
+
+// ============================================
+// EXCHANGE RATES CACHE
+// ============================================
+
+model ExchangeRate {
+  id          String   @id @default(cuid())
+  fromCurrency String
+  toCurrency   String
+  rate         Float
+  updatedAt    DateTime @default(now())
+
+  @@unique([fromCurrency, toCurrency])
+  @@index([fromCurrency, toCurrency])
+  @@map("exchange_rates")
+}
+
+// ============================================
+// SUBSCRIPTION PLANS (Mock for MVP)
+// ============================================
+
+enum PlanType {
+  FREE
+  PREMIUM
+  ENTERPRISE
+}
+
+model Subscription {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  plan            PlanType @default(FREE)
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  isActive        Boolean  @default(true)
+  stripeCustomerId String? @unique // For future Stripe integration
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@map("subscriptions")
+}
+
