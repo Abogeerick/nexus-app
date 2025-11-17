@@ -16,15 +16,33 @@ export default auth((req) => {
   const isPublicRoute = nextUrl.pathname === "/" || nextUrl.pathname.startsWith("/auth");
   const isDashboard = nextUrl.pathname.startsWith("/dashboard");
   const isAdmin = nextUrl.pathname.startsWith("/admin");
+  
+  // Auth pages that should be accessible even when logged in
+  const alwaysAccessibleAuthPages = [
+    "/auth/signout",
+    "/auth/forgot-password",
+    "/auth/reset-password",
+    "/auth/verify-email",
+  ];
 
   // Allow API auth routes
   if (isApiAuthRoute) {
     return;
   }
 
-  // Redirect logged-in users away from auth pages
-  if (isPublicRoute && isLoggedIn && !nextUrl.pathname.startsWith("/auth/signout")) {
-    return Response.redirect(new URL("/dashboard", nextUrl));
+  // Redirect logged-in users away from signin/signup pages only
+  if (isPublicRoute && isLoggedIn) {
+    const isAlwaysAccessible = alwaysAccessibleAuthPages.some(path => 
+      nextUrl.pathname.startsWith(path)
+    );
+    
+    // Only redirect from signin/signup pages
+    if (!isAlwaysAccessible && (
+      nextUrl.pathname === "/auth/signin" || 
+      nextUrl.pathname === "/auth/signup"
+    )) {
+      return Response.redirect(new URL("/dashboard", nextUrl));
+    }
   }
 
   // Protect dashboard routes

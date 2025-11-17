@@ -9,7 +9,7 @@
  * these are for additional refresh token functionality
  */
 
-import jwt from "jsonwebtoken";
+import jwt, { SignOptions } from "jsonwebtoken";
 
 const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret-change-this";
 const ACCESS_EXPIRATION = process.env.JWT_ACCESS_EXPIRATION || "15m";
@@ -31,7 +31,7 @@ export function generateAccessToken(payload: TokenPayload): string {
     expiresIn: ACCESS_EXPIRATION,
     issuer: "nexus-finance",
     audience: "nexus-finance-api",
-  });
+  } as SignOptions);
 }
 
 /**
@@ -44,7 +44,7 @@ export function generateRefreshToken(payload: TokenPayload): string {
     expiresIn: REFRESH_EXPIRATION,
     issuer: "nexus-finance",
     audience: "nexus-finance-refresh",
-  });
+  } as SignOptions);
 }
 
 /**

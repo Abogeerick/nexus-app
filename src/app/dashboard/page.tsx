@@ -6,7 +6,7 @@
 
 import { auth } from "@/lib/auth/auth";
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import SignOutButton from "@/components/auth/SignOutButton";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -31,12 +31,7 @@ export default async function DashboardPage() {
               <span className="text-sm text-slate-600 dark:text-slate-300">
                 {session.user.email}
               </span>
-              <Link
-                href="/api/auth/signout"
-                className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-900 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600"
-              >
-                Sign Out
-              </Link>
+              <SignOutButton />
             </div>
           </div>
         </div>
