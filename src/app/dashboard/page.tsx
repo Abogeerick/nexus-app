@@ -6,6 +6,7 @@
 
 import { auth } from "@/lib/auth/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import SignOutButton from "@/components/auth/SignOutButton";
 
 export default async function DashboardPage() {
@@ -91,15 +92,15 @@ export default async function DashboardPage() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div className="rounded-2xl bg-white p-6 shadow-md transition-all hover:scale-[1.02] hover:shadow-lg dark:bg-slate-800">
-            <div className="mb-4 text-4xl">💰</div>
-            <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">
-              Add Account
+          <Link href="/dashboard/mpesa" className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-6 shadow-md transition-all hover:scale-[1.02] hover:shadow-xl">
+            <div className="mb-4 text-4xl">📱</div>
+            <h3 className="mb-2 text-lg font-semibold text-white">
+              M-PESA Transactions
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              Connect your bank accounts, Mpesa, or crypto wallets
+            <p className="text-sm text-emerald-50">
+              Import and analyze your M-PESA transactions with AI-powered insights
             </p>
-          </div>
+          </Link>
 
           <div className="rounded-2xl bg-white p-6 shadow-md transition-all hover:scale-[1.02] hover:shadow-lg dark:bg-slate-800">
             <div className="mb-4 text-4xl">📊</div>
