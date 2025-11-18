@@ -360,22 +360,35 @@ function parseTransactionBlock(
     transaction.phoneNumber = phoneNumbers[0];
   }
   
-  // Extract merchant/counterparty names
-  // Pattern 1: "from/to - [phone] NAME" (most common in M-PESA PDFs)
-  let nameMatch = block.match(/(?:from|to|by)\s*-\s*(?:254\d\*{6}\d{3}|07\*{6}\d{3})\s+([A-Z][a-zA-Z\s]+?)(?:\s+Completed|\s+Co[^a-zA-Z]|$)/i);
+  // Extract full description/details for manual review
+  const detailsStart = block.indexOf(transactionTime) + transactionTime.length;
+  const detailsEnd = block.indexOf("Completed");
+  if (detailsStart > -1 && detailsEnd > detailsStart) {
+    transaction.description = block.substring(detailsStart, detailsEnd).trim();
+  } else {
+    transaction.description = block.substring(0, 200).trim(); // Fallback
+  }
+  
+  // Extract merchant/counterparty names (ENHANCED PATTERNS)
+  // Pattern 1: "from/to/by - [phone] NAME" (most common in M-PESA PDFs)
+  // Improved to capture more name variations
+  let nameMatch = block.match(/(?:from|to|by)\s*-\s*(?:254\d[\d\*]{8}\d|07[\d\*]{6}\d{2})\s+([A-Z][a-zA-Z\s\.]+?)(?:\s+Completed|\s+Co[^a-zA-Z]|\s+via|$)/i);
   if (nameMatch) {
     const name = nameMatch[1].trim();
+    // Clean up the name (remove trailing 'Co', 'Ltd', etc. if incomplete)
+    const cleanedName = name.replace(/\s+(Co|Lt|Vi|MP)$/i, '').trim();
     if (block.toLowerCase().includes("received") || block.toLowerCase().includes("from")) {
-      transaction.sender = name;
+      transaction.sender = cleanedName;
+      transaction.merchantName = cleanedName;
     } else {
-      transaction.recipient = name;
-      transaction.merchantName = name;
+      transaction.recipient = cleanedName;
+      transaction.merchantName = cleanedName;
     }
   }
   
   // Pattern 2: Safaricom/Merchant bundles - "to [number]MERCHANT NAME"
   if (!transaction.merchantName) {
-    const merchantMatch = block.match(/to\s+\d+([A-Z][A-Z\s]+(?:DATA|BUNDLES|AIRTIME)[A-Z\s]*)/i);
+    const merchantMatch = block.match(/to\s+\d+([A-Z][\sA-Z]+(?:DATA|BUNDLES|AIRTIME|OFFICE|CYBER|MART|SHOP|STORE)[\sA-Z]*)/i);
     if (merchantMatch) {
       transaction.merchantName = merchantMatch[1].trim();
     }
@@ -383,17 +396,34 @@ function parseTransactionBlock(
   
   // Pattern 3: Business payments - "from [number] - NAME"
   if (!transaction.sender && !transaction.merchantName) {
-    const businessMatch = block.match(/from\s+(\d+)\s*-\s*([A-Z][a-zA-Z\s]+?)(?:\s+via|\s+Completed|$)/i);
+    const businessMatch = block.match(/from\s+(\d+)\s*-\s*([A-Z][a-zA-Z\s\.]+?)(?:\s+via|\s+Completed|\s+Original|$)/i);
     if (businessMatch) {
       transaction.paybillNumber = businessMatch[1];
-      transaction.sender = businessMatch[2].trim();
-      transaction.merchantName = businessMatch[2].trim(); // Use merchantName for business payments
+      const cleanedName = businessMatch[2].trim().replace(/\s+(via|Original)$/i, '').trim();
+      transaction.sender = cleanedName;
+      transaction.merchantName = cleanedName;
     }
   }
   
-  // Pattern 4: Till/Paybill merchants - "to [number] NAME"
+  // Pattern 4: Merchant Payment - "to [number] - NAME"
   if (!transaction.merchantName) {
-    const tillMatch = block.match(/(?:till|paybill)\s+(\d+)\s*-?\s*([A-Z][a-zA-Z\s]+?)(?:\s+Completed|$)/i);
+    const merchantPayMatch = block.match(/(?:merchant payment|lipa na m-pesa).*?to\s+(\d+)\s*-?\s*([A-Z][a-zA-Z\s\.]+?)(?:\s+Completed|$)/i);
+    if (merchantPayMatch) {
+      const tillOrPaybill = merchantPayMatch[1];
+      const cleanedName = merchantPayMatch[2].trim().replace(/\s+Completed$/i, '').trim();
+      
+      if (block.toLowerCase().includes("till")) {
+        transaction.tillNumber = tillOrPaybill;
+      } else {
+        transaction.paybillNumber = tillOrPaybill;
+      }
+      transaction.merchantName = cleanedName;
+    }
+  }
+  
+  // Pattern 5: Till/Paybill merchants - "to [number] NAME"
+  if (!transaction.merchantName) {
+    const tillMatch = block.match(/(?:till|paybill)\s+(\d+)\s*-?\s*([A-Z][a-zA-Z\s\.]+?)(?:\s+Completed|$)/i);
     if (tillMatch) {
       if (block.toLowerCase().includes("till")) {
         transaction.tillNumber = tillMatch[1];
@@ -408,16 +438,40 @@ function parseTransactionBlock(
   const detailsLower = block.toLowerCase();
   
   // Priority-based type detection (most specific first)
-  if (detailsLower.includes("overdraft of credit party")) {
+  // CRITICAL: Handle charges first - Safaricom charges for transfers above KES 100
+  if (detailsLower.includes("customer transfer of funds charge") || 
+      (detailsLower.includes("charge") && detailsLower.includes("transfer"))) {
+    transaction.rawType = "Charge";
+    transaction.merchantName = "Safaricom Transfer Fee";
+    transaction.description = "Safaricom charge for money transfer above KES 100";
+  } 
+  // Fuliza Overdraft - when you use Fuliza credit
+  else if (detailsLower.includes("overdraft of credit party")) {
     transaction.rawType = "FulizaLoan";
-    transaction.merchantName = transaction.merchantName || "M-PESA Overdraft";
-  } else if (detailsLower.includes("qq loan repayment") || detailsLower.includes("fuliza") && detailsLower.includes("repayment")) {
+    transaction.merchantName = "M-PESA Fuliza";
+    transaction.description = "Fuliza overdraft credit extended";
+  } 
+  // Fuliza Repayment - paying back Fuliza debt
+  else if (detailsLower.includes("od loan repayment") || 
+           detailsLower.includes("loan repayment to 232323") ||
+           (detailsLower.includes("fuliza") && detailsLower.includes("repayment"))) {
     transaction.rawType = "FulizaRepayment";
-  } else if (detailsLower.includes("funds received") || detailsLower.includes("received from")) {
+    transaction.merchantName = "M-PESA Fuliza Repayment";
+    transaction.description = "Repayment of Fuliza overdraft debt";
+  }
+  // Money received
+  else if (detailsLower.includes("funds received") || detailsLower.includes("received from")) {
     transaction.rawType = "Received";
-  } else if (detailsLower.includes("business payment from")) {
+  } 
+  // Business payments (e.g., from Equity Bank)
+  else if (detailsLower.includes("business payment from")) {
     transaction.rawType = "Received";
-  } else if (detailsLower.includes("recharge") || detailsLower.includes("airtime purchase") || detailsLower.includes("data bundles")) {
+  } 
+  // Airtime and data bundles
+  else if (detailsLower.includes("recharge") || 
+           detailsLower.includes("airtime purchase") || 
+           detailsLower.includes("data bundles") ||
+           detailsLower.includes("bundle purchase")) {
     transaction.rawType = "Airtime";
     // Ensure merchant name includes "SAFARICOM" or bundle type
     if (!transaction.merchantName || transaction.merchantName === "Unknown") {
@@ -426,21 +480,40 @@ function parseTransactionBlock(
         transaction.merchantName = bundleMatch[1].trim();
       } else if (detailsLower.includes("safaricom")) {
         transaction.merchantName = "SAFARICOM";
+      } else {
+        transaction.merchantName = "SAFARICOM DATA BUNDLES";
       }
     }
-  } else if (detailsLower.includes("customer transfer") || detailsLower.includes("send money to")) {
+  } 
+  // Money sent (including Fuliza transfers)
+  else if (detailsLower.includes("customer transfer") || 
+           detailsLower.includes("send money to")) {
     transaction.rawType = "Sent";
-  } else if (detailsLower.includes("customer transfer of funds charge")) {
-    transaction.rawType = "Charge";
-    transaction.merchantName = "Transfer Fee";
-  } else if (detailsLower.includes("merchant payment") || detailsLower.includes("lipa na m-pesa")) {
+    // If it's a Fuliza transfer, note it in description
+    if (detailsLower.includes("fuliza")) {
+      transaction.description = (transaction.description || "") + " (via Fuliza)";
+    }
+  } 
+  // Merchant payments (Lipa na M-PESA)
+  else if (detailsLower.includes("merchant payment") || 
+           detailsLower.includes("lipa na m-pesa")) {
     transaction.rawType = "PayBill";
-  } else if (detailsLower.includes("buy goods") || detailsLower.includes("till number")) {
+  } 
+  // Buy goods (Till number)
+  else if (detailsLower.includes("buy goods") || 
+           detailsLower.includes("till number")) {
     transaction.rawType = "BuyGoods";
-  } else if (detailsLower.includes("withdraw") || detailsLower.includes("agent")) {
+  } 
+  // Withdrawals
+  else if (detailsLower.includes("withdraw") || 
+           detailsLower.includes("agent")) {
     transaction.rawType = "Withdrawal";
-  } else if (detailsLower.includes("charge") || detailsLower.includes("fee")) {
+  } 
+  // Generic charges/fees
+  else if (detailsLower.includes("charge") || 
+           detailsLower.includes("fee")) {
     transaction.rawType = "Charge";
+    transaction.merchantName = transaction.merchantName || "Safaricom Fee";
   }
 
   // Extract account numbers for paybill transactions

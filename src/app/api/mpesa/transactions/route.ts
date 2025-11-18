@@ -31,8 +31,10 @@ export async function GET(request: NextRequest) {
     const importBatchId = searchParams.get("importBatchId");
 
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "50");
-    const skip = (page - 1) * limit;
+    // Remove hard limit - use pagination or fetch all if no limit specified
+    const limitParam = searchParams.get("limit");
+    const limit = limitParam ? parseInt(limitParam) : undefined; // No limit by default
+    const skip = limit ? (page - 1) * limit : 0;
 
     // Build where clause
     const where: any = { userId };
@@ -63,8 +65,7 @@ export async function GET(request: NextRequest) {
       prisma.mpesaTransaction.findMany({
         where,
         orderBy: { transactionDate: "desc" },
-        skip,
-        take: limit,
+        ...(limit && { skip, take: limit }),
       }),
       prisma.mpesaTransaction.count({ where }),
     ]);
@@ -98,12 +99,19 @@ export async function GET(request: NextRequest) {
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
       })),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: limit
+        ? {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          }
+        : {
+            page: 1,
+            limit: total,
+            total,
+            totalPages: 1,
+          },
       summary: {
         totalTransactions: summary._count,
         totalAmount: summary._sum.amount ? Number(summary._sum.amount) : 0,

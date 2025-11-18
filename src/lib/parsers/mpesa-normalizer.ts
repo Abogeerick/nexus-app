@@ -244,14 +244,24 @@ function isIncomeTransaction(type: MpesaTransactionType): boolean {
  * Determine counterparty name
  */
 function determineCounterparty(raw: RawMpesaTransaction, type: MpesaTransactionType): string {
+  // Handle specific merchant names from PDF parsing
+  if (raw.merchantName) {
+    const cleaned = cleanName(raw.merchantName);
+    // Don't return "Unknown" if we have a merchant name
+    if (cleaned && cleaned !== "UNKNOWN" && cleaned !== "Unknown") {
+      return cleaned;
+    }
+  }
+  
   if (raw.sender) return cleanName(raw.sender);
   if (raw.recipient) return cleanName(raw.recipient);
-  if (raw.merchantName) return cleanName(raw.merchantName);
 
   // Default names based on type
   if (type === MpesaTransactionType.WITHDRAW_AT_ATM) return "ATM Withdrawal";
   if (type === MpesaTransactionType.WITHDRAW_AT_AGENT) return "M-PESA Agent";
   if (type === MpesaTransactionType.AIRTIME_PURCHASE) return "Safaricom Airtime";
+  if (type === MpesaTransactionType.FULIZA_LOAN) return "M-PESA Fuliza";
+  if (type === MpesaTransactionType.FULIZA_REPAYMENT) return "M-PESA Fuliza Repayment";
 
   return "Unknown";
 }

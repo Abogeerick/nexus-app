@@ -65,6 +65,7 @@ export interface RawMpesaTransaction {
 
   // Original text
   originalText?: string;
+  description?: string; // Full transaction description/details from PDF
   source?: MpesaStatementFormat;
 
   // Metadata

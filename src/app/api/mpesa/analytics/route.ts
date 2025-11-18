@@ -136,6 +136,25 @@ export async function GET(request: NextRequest) {
       return acc;
     }, {} as Record<string, number>);
 
+    // Monthly trend data
+    const monthlyTrend = transactions.reduce((acc, t) => {
+      const month = t.transactionDate.toISOString().substring(0, 7); // YYYY-MM
+      if (!acc[month]) {
+        acc[month] = { month, income: 0, expense: 0 };
+      }
+      const amount = Number(t.amount);
+      if (t.isIncome) {
+        acc[month].income += amount;
+      } else {
+        acc[month].expense += amount;
+      }
+      return acc;
+    }, {} as Record<string, { month: string; income: number; expense: number }>);
+
+    // Convert to array and sort
+    const monthlyTrendArray = Object.values(monthlyTrend)
+      .sort((a, b) => a.month.localeCompare(b.month));
+
     // Daily spending trend (last 30 days or specified period)
     const dailySpending = transactions
       .filter((t) => !t.isIncome)
@@ -196,6 +215,7 @@ export async function GET(request: NextRequest) {
       },
       recurringPayments: recurringPayments.filter((p) => p.isLikelySubscription),
       typeDistribution,
+      monthlyTrend: monthlyTrendArray,
       spendingTrend,
       insights: {
         largestIncome,

@@ -102,14 +102,20 @@ export async function parseMpesaData(
   }
 
   // Step 4: Detect and handle duplicates
+  // NOTE: Skip duplicate detection for PDF imports since M-PESA PDFs are official statements
+  // where each row represents a unique financial event (even if codes repeat for Fuliza, charges, etc.)
   let duplicates: number = 0;
-  if (skipDuplicates && normalizedTransactions.length > 0) {
+  if (skipDuplicates && normalizedTransactions.length > 0 && detectedFormat !== MpesaStatementFormat.PDF) {
     const duplicateMatches = findDuplicates(normalizedTransactions, existingTransactions);
     const stats = getDuplicateStats(duplicateMatches);
     duplicates = stats.highConfidence; // Count only high-confidence duplicates
 
     // Remove duplicates
     normalizedTransactions = removeDuplicates(normalizedTransactions, duplicateMatches);
+    
+    console.log(`🔍 Duplicate detection: Found ${duplicates} duplicates, ${normalizedTransactions.length} unique transactions remaining`);
+  } else if (detectedFormat === MpesaStatementFormat.PDF) {
+    console.log(`📄 PDF import: Skipping duplicate detection (official statement)`);
   }
 
   // Step 5: Generate summary

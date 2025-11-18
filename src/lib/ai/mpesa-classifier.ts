@@ -214,6 +214,19 @@ export function classifyTransaction(
     };
   }
 
+  // Handle charges and fees
+  if (type === "Charge" || 
+      merchantName?.toLowerCase().includes("transfer fee") ||
+      merchantName?.toLowerCase().includes("safaricom fee") ||
+      description?.toLowerCase().includes("charge")) {
+    return {
+      category: "Financial",
+      subcategory: "Fees & Charges",
+      confidence: 0.95,
+      reasoning: "Safaricom transaction charge or fee",
+    };
+  }
+
   if (type === "RECEIVED_FROM_PERSON") {
     return {
       category: "Income",
