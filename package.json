@@ -17,15 +17,18 @@
     "db:migrate": "dotenv -e .env.local -- prisma migrate dev",
     "db:studio": "dotenv -e .env.local -- prisma studio",
     "db:seed": "dotenv -e .env.local -- tsx prisma/seed.ts",
+    "db:seed:mpesa": "dotenv -e .env.local -- tsx prisma/seed-mpesa.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
     "bcryptjs": "^3.0.3",
     "jsonwebtoken": "^9.0.2",
+    "nanoid": "^5.1.6",
     "next": "16.0.2",
     "next-auth": "^5.0.0-beta.30",
     "nodemailer": "^7.0.10",
+    "pdf-parse": "^2.4.5",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
@@ -45,6 +48,7 @@
     "prettier": "^3.6.2",
     "prisma": "^6.19.0",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }
