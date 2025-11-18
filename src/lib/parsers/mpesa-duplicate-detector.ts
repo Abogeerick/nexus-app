@@ -42,18 +42,34 @@ export function findDuplicates(
   const hashIndex = buildHashIndex(allTransactions);
   const amountPhoneIndex = buildAmountPhoneIndex(allTransactions);
 
+  let exactCodeDuplicates = 0;
+  let hashDuplicates = 0;
+  let timeAmountDuplicates = 0;
+
   for (const transaction of transactions) {
-    // Strategy 1: Exact transaction code match
+    // Strategy 1: Exact transaction code match + SAME amount and timestamp
+    // NOTE: M-PESA reuses transaction codes for related transactions (main + charges + overdraft)
+    // So we CANNOT just match by code alone - we need amount AND timestamp to match
     const codeMatches = codeIndex.get(transaction.transactionCode) || [];
     for (const match of codeMatches) {
       if (match === transaction) continue; // Skip self
 
-      duplicates.push({
-        transaction,
-        matchedTransaction: match,
-        matchType: "exact",
-        confidence: 1.0,
-      });
+      // Only mark as duplicate if code, amount, AND timestamp are exactly the same
+      const matchTime = match.timestamp instanceof Date ? match.timestamp.getTime() : new Date(match.timestamp).getTime();
+      const txnTime = transaction.timestamp instanceof Date ? transaction.timestamp.getTime() : new Date(transaction.timestamp).getTime();
+      
+      if (
+        match.amount === transaction.amount &&
+        Math.abs(matchTime - txnTime) < 1000 // Within 1 second
+      ) {
+        duplicates.push({
+          transaction,
+          matchedTransaction: match,
+          matchType: "exact",
+          confidence: 1.0,
+        });
+        exactCodeDuplicates++;
+      }
     }
 
     // Strategy 2: Transaction hash match
@@ -69,6 +85,7 @@ export function findDuplicates(
           matchType: "hash",
           confidence: 0.95,
         });
+        hashDuplicates++;
       }
     }
 
@@ -88,6 +105,7 @@ export function findDuplicates(
         matchType: "time-amount",
         confidence: 0.85,
       });
+      timeAmountDuplicates++;
     }
 
     // Strategy 4: Amount + Phone + Date match
@@ -108,6 +126,12 @@ export function findDuplicates(
       }
     }
   }
+
+  console.log(`🔍 Duplicate Detection Summary:`);
+  console.log(`   - Exact code+amount+time duplicates: ${exactCodeDuplicates}`);
+  console.log(`   - Hash match duplicates: ${hashDuplicates}`);
+  console.log(`   - Time+amount duplicates: ${timeAmountDuplicates}`);
+  console.log(`   - Total duplicate matches: ${duplicates.length}`);
 
   return duplicates;
 }

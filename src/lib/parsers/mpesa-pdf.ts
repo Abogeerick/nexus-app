@@ -19,12 +19,13 @@ export async function parseMpesaPDF(
   const errors: ParseError[] = [];
 
   try {
-    // Use pdf2json (Node.js native PDF parser)
+    // Use pdf2json (Node.js native) with enhanced diagnostics
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const PDFParser = require("pdf2json");
     
-    // Create a promise-based wrapper for pdf2json
-    const extractText = (): Promise<string> => {
+    console.log("📄 Starting PDF extraction with pdf2json...");
+    
+    const extractText = (): Promise<{text: string, pageCount: number}> => {
       return new Promise((resolve, reject) => {
         const pdfParser = new PDFParser();
 
@@ -34,40 +35,54 @@ export async function parseMpesaPDF(
 
         pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
           try {
-            // Extract text from all pages
             let fullText = "";
+            let pageCount = 0;
+            let textsByPage: string[] = [];
 
             if (pdfData.Pages && Array.isArray(pdfData.Pages)) {
-              for (const page of pdfData.Pages) {
+              pageCount = pdfData.Pages.length;
+              
+              for (let pageNum = 0; pageNum < pdfData.Pages.length; pageNum++) {
+                const page = pdfData.Pages[pageNum];
+                let pageText = "";
+                
                 if (page.Texts && Array.isArray(page.Texts)) {
                   for (const text of page.Texts) {
                     if (text.R && Array.isArray(text.R)) {
                       for (const run of text.R) {
                         if (run.T) {
-                          // Decode URI-encoded text
                           const decodedText = decodeURIComponent(run.T);
-                          fullText += decodedText + " ";
+                          pageText += decodedText + " ";
                         }
                       }
                     }
                   }
-                  fullText += "\n"; // New line after each text block
                 }
+                
+                textsByPage.push(pageText);
+                fullText += pageText + "\n";
               }
+              
+              // Log sample from different pages
+              console.log(`📄 Extracted ${pageCount} pages`);
+              console.log(`📄 Page 1 length: ${textsByPage[0]?.length || 0} chars`);
+              console.log(`📄 Page 10 length: ${textsByPage[9]?.length || 0} chars`);
+              console.log(`📄 Page 30 length: ${textsByPage[29]?.length || 0} chars`);
+              console.log(`📄 Page 68 length: ${textsByPage[67]?.length || 0} chars`);
             }
 
-            resolve(fullText);
+            resolve({text: fullText, pageCount});
           } catch (error) {
             reject(error);
           }
         });
 
-        // Parse the PDF buffer
         pdfParser.parseBuffer(pdfBuffer);
       });
     };
 
-    const fullText = await extractText();
+    const {text: fullText, pageCount} = await extractText();
+    console.log(`✅ Extracted text from ${pageCount} pages (total: ${fullText.length} chars)`);
 
     if (!fullText || fullText.trim().length === 0) {
       errors.push({
@@ -79,8 +94,20 @@ export async function parseMpesaPDF(
       return { transactions, errors };
     }
 
+    // Debug: Log first and last 1000 characters of extracted text
+    console.log("=== PDF TEXT EXTRACTED (first 1000 chars) ===");
+    console.log(fullText.substring(0, 1000));
+    console.log("\n=== PDF TEXT EXTRACTED (last 1000 chars) ===");
+    console.log(fullText.substring(fullText.length - 1000));
+    console.log("\n=== Total length:", fullText.length, "===");
+
     // Parse the extracted text
     const result = parsePDFText(fullText);
+    
+    // Debug: Log parsing result
+    console.log("=== PARSING RESULT ===");
+    console.log("Transactions found:", result.transactions.length);
+    console.log("Errors:", result.errors.length);
     
     return result;
   } catch (error) {
@@ -104,184 +131,311 @@ function parsePDFText(text: string): {
   const transactions: RawMpesaTransaction[] = [];
   const errors: ParseError[] = [];
 
-  // Split into lines
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  console.log("=== STARTING PDF TEXT PARSING ===");
 
-  // Try to detect the format
-  // M-PESA PDFs typically have tabular data with columns:
-  // Receipt No. | Completion Time | Details | Transaction Status | Paid In | Withdrawn | Balance
-
-  let headerLine = -1;
-  let dataStartLine = -1;
-
-  // Find the header line
-  for (let i = 0; i < Math.min(50, lines.length); i++) {
-    const line = lines[i].toLowerCase();
-    if (
-      line.includes("receipt") &&
-      (line.includes("completion") || line.includes("date") || line.includes("time"))
-    ) {
-      headerLine = i;
-      dataStartLine = i + 1;
-      break;
+  // Find where the detailed statement starts
+  const detailedStatementIndex = text.indexOf("DETAILED STATEMENT");
+  if (detailedStatementIndex === -1) {
+    console.log("❌ No 'DETAILED STATEMENT' section found, trying alternative parsing");
+    // Try to find "Receipt No." instead
+    const receiptIndex = text.indexOf("Receipt No.");
+    if (receiptIndex === -1) {
+      return parseAsTransactionMessages(text);
     }
+    // Continue with receipt section
+    const dataSection = text.substring(receiptIndex);
+    return parseByTransactionCodes(dataSection, errors);
   }
 
-  if (headerLine === -1) {
-    // No header found, try to parse as transaction messages (like SMS)
-    return parseAsTransactionMessages(text);
+  // Extract the detailed statement section
+  const detailedSection = text.substring(detailedStatementIndex);
+  return parseByTransactionCodes(detailedSection, errors);
+}
+
+/**
+ * Parse text by splitting on transaction codes
+ */
+function parseByTransactionCodes(text: string, errors: ParseError[]): {
+  transactions: RawMpesaTransaction[];
+  errors: ParseError[];
+} {
+  const transactions: RawMpesaTransaction[] = [];
+
+  // Find where the actual transaction data starts (after the header)
+  const headerIndex = Math.max(
+    text.indexOf("Receipt No."),
+    text.indexOf("Completion Time"),
+    text.indexOf("Transaction Status")
+  );
+
+  if (headerIndex === -1) {
+    console.log("❌ No header found");
+    return { transactions, errors };
   }
 
-  // Parse tabular data
-  for (let i = dataStartLine; i < lines.length; i++) {
-    const line = lines[i].trim();
+  // Move past the header line to get to transaction data
+  // Skip ~200 chars to get past "Receipt No. Completion Time Details..." header
+  const dataSection = text.substring(headerIndex + 200);
+  
+  console.log("📊 Data section length:", dataSection.length);
+
+  // CRITICAL: Split by "CODE + DATE + TIME" pattern, not just CODE
+  // Because M-PESA PDFs have MULTIPLE ROWS with the SAME transaction code
+  // Each row in the PDF table is a SEPARATE transaction
+  // Pattern: T or R followed by any letters/numbers (8-12 chars total) + date + time
+  // Examples: TKHE4AFXVV, TEI788J129, RK12345678
+  const txnRowPattern = /\b([TR][A-Z0-9]{7,11})\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/g;
+  
+  // Find all transaction rows and their positions
+  const rowMatches = Array.from(dataSection.matchAll(txnRowPattern));
+  console.log("🔍 Found transaction ROWS:", rowMatches.length);
+
+  // Debug: Check if we're missing any transaction codes
+  const allCodesPattern = /\b([TR][A-Z0-9]{7,11})\b/g;
+  const allCodes = Array.from(dataSection.matchAll(allCodesPattern));
+  console.log("📊 Total transaction CODE occurrences:", allCodes.length);
+  console.log("⚠️  Rows without date/time:", allCodes.length - rowMatches.length);
+  
+  // Check for date patterns to see if older transactions exist in the text
+  const datePattern = /2025-\d{2}-\d{2}/g;
+  const allDates = Array.from(dataSection.matchAll(datePattern));
+  const uniqueDates = [...new Set(allDates.map(m => m[0]))].sort();
+  console.log(`📅 Date range in text: ${uniqueDates[0]} to ${uniqueDates[uniqueDates.length - 1]}`);
+  console.log(`📅 Total unique dates found: ${uniqueDates.length}`);
+
+  // Show some sample transaction rows
+  if (rowMatches.length > 0) {
+    const sampleRows = rowMatches.slice(0, 5).map(m => `${m[1]} ${m[2]} ${m[3]}`);
+    console.log("📋 Sample rows:", sampleRows.join(" | "));
     
-    // Skip empty lines
-    if (!line) continue;
+    // Show last few rows to see date range
+    const lastRows = rowMatches.slice(-3).map(m => `${m[1]} ${m[2]}`);
+    console.log("📅 Last transactions:", lastRows.join(" | "));
+  }
 
-    // Skip lines that look like page numbers or footers
-    if (/^page \d+/i.test(line) || /^\d+$/.test(line)) continue;
+  // Extract text block for each transaction ROW
+  let skipped = 0;
+  let validTransactions = 0;
 
-    // Skip header repetitions
-    if (
-      line.toLowerCase().includes("receipt") &&
-      line.toLowerCase().includes("completion")
-    ) {
+  for (let i = 0; i < rowMatches.length; i++) {
+    const currentMatch = rowMatches[i];
+    const nextMatch = rowMatches[i + 1];
+    
+    const startPos = currentMatch.index || 0;
+    const endPos = nextMatch ? (nextMatch.index || dataSection.length) : dataSection.length;
+    
+    const transactionBlock = dataSection.substring(startPos, endPos).trim();
+    const transactionCode = currentMatch[1];
+    const transactionDate = currentMatch[2];
+    const transactionTime = currentMatch[3];
+
+    // Skip if block is too short (likely not a full transaction)
+    if (transactionBlock.length < 20) {
+      skipped++;
+      continue;
+    }
+    
+    // Skip verification codes and other non-transaction codes
+    if (transactionCode.match(/^CTX|^STK|^CODE/)) {
+      skipped++;
+      continue;
+    }
+    
+    // Skip if it looks like a header repetition
+    if (transactionBlock.includes("Receipt No.") && transactionBlock.includes("Completion Time")) {
+      skipped++;
       continue;
     }
 
     try {
-      const transaction = parseTableLine(line, i + 1);
+      const transaction = parseTransactionBlock(
+        transactionBlock,
+        transactionCode,
+        transactionDate,
+        transactionTime,
+        i + 1
+      );
       if (transaction) {
         transaction.source = MpesaStatementFormat.PDF;
-        transaction.originalText = line;
+        transaction.originalText = transactionBlock.substring(0, 500); // Limit to 500 chars
         transactions.push(transaction);
+        validTransactions++;
+      } else {
+        skipped++;
       }
     } catch (error) {
-      // Some lines may not be transaction data (totals, summaries, etc.)
-      // Only log if it looks like it should be a transaction
-      if (line.match(/[A-Z]{2,4}\d{1,2}[A-Z0-9]{4,6}/)) {
-        errors.push({
-          line: i + 1,
-          rawText: line.substring(0, 100),
-          error: error instanceof Error ? error.message : "Failed to parse line",
-          severity: "warning",
-        });
-      }
+      errors.push({
+        line: i + 1,
+        rawText: transactionBlock.substring(0, 100),
+        error: error instanceof Error ? error.message : "Failed to parse transaction",
+        severity: "warning",
+      });
     }
   }
+
+  console.log("✅ Valid transactions:", validTransactions);
+  console.log("⏭️  Skipped blocks:", skipped);
+  console.log("⚠️  Errors:", errors.length);
 
   return { transactions, errors };
 }
 
 /**
- * Parse a line of tabular data from PDF
+ * Parse a transaction block extracted from PDF
  */
-function parseTableLine(line: string, lineNumber: number): RawMpesaTransaction | null {
-  // M-PESA PDFs have transaction codes like: TKHE4AFXVW, TKH4PAGI8B, etc.
-  // Pattern: 2-4 letters, 1-2 digits, 4-6 alphanumeric
-  const codeMatch = line.match(/\b([A-Z]{2,4}\d{1,2}[A-Z0-9]{4,6})\b/);
-  if (!codeMatch) {
-    return null; // Not a transaction line
-  }
-
+function parseTransactionBlock(
+  block: string,
+  transactionCode: string,
+  transactionDate: string,
+  transactionTime: string,
+  blockNumber: number
+): RawMpesaTransaction | null {
   const transaction: RawMpesaTransaction = {
-    transactionCode: codeMatch[1],
+    transactionCode: transactionCode,
+    date: transactionDate, // Use pre-extracted date
+    time: transactionTime, // Use pre-extracted time
   };
 
-  // Extract date/time - M-PESA PDF format: 2025-11-17 19:12:57
-  const dateTimeMatch = line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
-  if (dateTimeMatch) {
-    transaction.date = dateTimeMatch[1];
-    transaction.time = dateTimeMatch[2];
-  } else {
-    // Fallback to other date formats
-    const dateMatch = line.match(
-      /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)/i
-    );
-    if (dateMatch) {
-      transaction.date = dateMatch[1];
-      transaction.time = dateMatch[2];
-    }
-  }
-
   // Extract amounts - M-PESA PDF has Paid In and Withdrawn columns
-  // Look for amounts with proper context
-  const amounts = line.match(/\b([\d,]+\.\d{2})\b/g);
+  // The format is: ... Completed [amount1] [amount2]
+  // where amount1 is Paid In or Withdrawn, amount2 is Balance
+  // Look for all numbers that look like amounts
+  const amounts = block.match(/-?[\d,]+\.\d{2}/g);
   if (amounts && amounts.length > 0) {
-    // Try to find "Paid In" amount (positive, income)
-    const paidInMatch = line.match(/(?:paid in|paidin)[:\s]*([\d,]+\.\d{2})/i);
-    if (paidInMatch) {
-      transaction.amount = parseAmount(paidInMatch[1]);
-      transaction.rawType = "Income";
-    } else {
-      // Try to find "Withdrawn" amount (negative, expense)
-      const withdrawnMatch = line.match(/(?:withdrawn|withdraw)[:\s]*-?([\d,]+\.\d{2})/i);
-      if (withdrawnMatch) {
-        transaction.amount = parseAmount(withdrawnMatch[1]);
-        transaction.rawType = "Expense";
-      } else if (amounts.length >= 2) {
-        // If we have multiple amounts, first is usually transaction, last is balance
-        transaction.amount = parseAmount(amounts[0]);
-        // Determine type from details
+    // Find "Completed" keyword to locate amounts after it
+    const completedIndex = block.indexOf("Completed");
+    if (completedIndex !== -1) {
+      const afterCompleted = block.substring(completedIndex);
+      const amountsAfterCompleted = afterCompleted.match(/-?([\d,]+\.\d{2})/g);
+      
+      if (amountsAfterCompleted && amountsAfterCompleted.length >= 2) {
+        // First amount after "Completed" is transaction amount (can be negative)
+        const firstAmount = amountsAfterCompleted[0];
+        transaction.amount = Math.abs(parseAmount(firstAmount));
+        
+        // Determine if income or expense based on sign or position
+        if (firstAmount.startsWith("-")) {
+          transaction.rawType = "Expense";
+        } else {
+          // Check which column it's in (Paid In vs Withdrawn)
+          // If there's a 0.00 right before balance, it's the other column
+          if (amountsAfterCompleted.length >= 3) {
+            // Format: amount1 amount2 balance
+            // If amount2 is 0.00, then amount1 is in Paid In column
+            if (amountsAfterCompleted[1] === "0.00") {
+              transaction.rawType = "Income";
+            } else {
+              transaction.rawType = "Expense";
+            }
+          } else {
+            // Only 2 amounts: amount and balance
+            // Assume expense if details contain expense keywords
+            const lowerBlock = block.toLowerCase();
+            if (lowerBlock.includes("received") || lowerBlock.includes("overdraft of credit")) {
+              transaction.rawType = "Income";
+            } else {
+              transaction.rawType = "Expense";
+            }
+          }
+        }
+        
+        // Last amount is the balance
+        transaction.balance = parseAmount(amountsAfterCompleted[amountsAfterCompleted.length - 1]);
       }
     }
-
-    // Last amount is usually the balance
-    transaction.balance = parseAmount(amounts[amounts.length - 1]);
   }
 
   // Extract details from the Details column
-  // M-PESA PDF format examples:
+  // M-PESA PDF format examples from the provided screenshots:
+  // "Recharge for Customer With Fuliza to 4093441SAFARICOM DATA BUNDLES by - 07******507 Erick Oluga"
   // "Funds received from - 2547******362 JULIANA JUMA"
   // "Customer Transfer Fuliza MPesa to - 07******669 Lilian Lusimba"
-  // "Recharge for Customer With Fuliza to 4093441SAFARICOM DATA BUNDLES by - 07******507 Erick Oluga"
+  // "OverDraft of Credit Party"
+  // "Business Payment from 300600 - Equity Bulk Account via API. Digital conversation ID is EDXCD117443E4E3."
   
-  // Extract person/merchant names (typically in CAPS or Title Case)
-  const namePatterns = [
-    /(?:from|to|by)\s+[-\d\*]+\s+([A-Z][A-Z\s]{2,})/i, // "from - 2547******362 JULIANA JUMA"
-    /(?:from|to|by)\s+([A-Z][A-Z\s]{2,})/i, // "to ALEX KARIMI"
-    /\b([A-Z]{2,}[A-Z\s]{3,})\b/, // Any all-caps name (3+ chars)
-  ];
-
-  for (const pattern of namePatterns) {
-    const nameMatch = line.match(pattern);
-    if (nameMatch) {
-      const name = nameMatch[1].trim();
-      // Filter out common non-name words
-      if (!/^(RECEIVED|SENT|PAID|TRANSFER|CUSTOMER|FUNDS|MONEY|MPESA|FULIZA|OVERDRAFT|LOAN|REPAYMENT|CHARGE|COMPLETED|STATUS|DETAILS)$/i.test(name)) {
-        if (transaction.rawType === "Income" || line.toLowerCase().includes("received") || line.toLowerCase().includes("from")) {
-          transaction.sender = name;
-        } else {
-          transaction.recipient = name;
-          transaction.merchantName = name;
-        }
-        break;
+  // Extract phone numbers first
+  const phoneNumberPattern = /(?:254\d{9}|07\d{8}|254\d\*{6}\d{3}|07\*{6}\d{3})/g;
+  const phoneNumbers = block.match(phoneNumberPattern) || [];
+  if (phoneNumbers.length > 0) {
+    transaction.phoneNumber = phoneNumbers[0];
+  }
+  
+  // Extract merchant/counterparty names
+  // Pattern 1: "from/to - [phone] NAME" (most common in M-PESA PDFs)
+  let nameMatch = block.match(/(?:from|to|by)\s*-\s*(?:254\d\*{6}\d{3}|07\*{6}\d{3})\s+([A-Z][a-zA-Z\s]+?)(?:\s+Completed|\s+Co[^a-zA-Z]|$)/i);
+  if (nameMatch) {
+    const name = nameMatch[1].trim();
+    if (block.toLowerCase().includes("received") || block.toLowerCase().includes("from")) {
+      transaction.sender = name;
+    } else {
+      transaction.recipient = name;
+      transaction.merchantName = name;
+    }
+  }
+  
+  // Pattern 2: Safaricom/Merchant bundles - "to [number]MERCHANT NAME"
+  if (!transaction.merchantName) {
+    const merchantMatch = block.match(/to\s+\d+([A-Z][A-Z\s]+(?:DATA|BUNDLES|AIRTIME)[A-Z\s]*)/i);
+    if (merchantMatch) {
+      transaction.merchantName = merchantMatch[1].trim();
+    }
+  }
+  
+  // Pattern 3: Business payments - "from [number] - NAME"
+  if (!transaction.sender && !transaction.merchantName) {
+    const businessMatch = block.match(/from\s+(\d+)\s*-\s*([A-Z][a-zA-Z\s]+?)(?:\s+via|\s+Completed|$)/i);
+    if (businessMatch) {
+      transaction.paybillNumber = businessMatch[1];
+      transaction.sender = businessMatch[2].trim();
+      transaction.merchantName = businessMatch[2].trim(); // Use merchantName for business payments
+    }
+  }
+  
+  // Pattern 4: Till/Paybill merchants - "to [number] NAME"
+  if (!transaction.merchantName) {
+    const tillMatch = block.match(/(?:till|paybill)\s+(\d+)\s*-?\s*([A-Z][a-zA-Z\s]+?)(?:\s+Completed|$)/i);
+    if (tillMatch) {
+      if (block.toLowerCase().includes("till")) {
+        transaction.tillNumber = tillMatch[1];
+      } else {
+        transaction.paybillNumber = tillMatch[1];
       }
+      transaction.merchantName = tillMatch[2].trim();
     }
   }
 
-  // Determine transaction type from details
-  const detailsLower = line.toLowerCase();
+  // Determine transaction type from details (improved to match PDF patterns)
+  const detailsLower = block.toLowerCase();
   
-  if (detailsLower.includes("funds received") || detailsLower.includes("received from")) {
-    transaction.rawType = "Received";
-  } else if (detailsLower.includes("send money") || detailsLower.includes("transfer") && detailsLower.includes("to")) {
-    transaction.rawType = "Sent";
-  } else if (detailsLower.includes("recharge") || detailsLower.includes("bundle purchase") || detailsLower.includes("data bundles")) {
-    transaction.rawType = "Airtime";
-    // Extract merchant from bundle purchases
-    const bundleMatch = line.match(/(\d+[A-Z\s]+(?:DATA|BUNDLES|AIRTIME))/i);
-    if (bundleMatch) {
-      transaction.merchantName = bundleMatch[1].trim();
-    }
-  } else if (detailsLower.includes("fuliza") && detailsLower.includes("repayment")) {
-    transaction.rawType = "FulizaRepayment";
-  } else if (detailsLower.includes("fuliza") && (detailsLower.includes("loan") || detailsLower.includes("overdraft"))) {
+  // Priority-based type detection (most specific first)
+  if (detailsLower.includes("overdraft of credit party")) {
     transaction.rawType = "FulizaLoan";
-  } else if (detailsLower.includes("paybill") || detailsLower.includes("lipa na m-pesa")) {
+    transaction.merchantName = transaction.merchantName || "M-PESA Overdraft";
+  } else if (detailsLower.includes("qq loan repayment") || detailsLower.includes("fuliza") && detailsLower.includes("repayment")) {
+    transaction.rawType = "FulizaRepayment";
+  } else if (detailsLower.includes("funds received") || detailsLower.includes("received from")) {
+    transaction.rawType = "Received";
+  } else if (detailsLower.includes("business payment from")) {
+    transaction.rawType = "Received";
+  } else if (detailsLower.includes("recharge") || detailsLower.includes("airtime purchase") || detailsLower.includes("data bundles")) {
+    transaction.rawType = "Airtime";
+    // Ensure merchant name includes "SAFARICOM" or bundle type
+    if (!transaction.merchantName || transaction.merchantName === "Unknown") {
+      const bundleMatch = block.match(/(\d+[A-Z\s]+(?:DATA|BUNDLES|AIRTIME)[A-Z\s]*)/i);
+      if (bundleMatch) {
+        transaction.merchantName = bundleMatch[1].trim();
+      } else if (detailsLower.includes("safaricom")) {
+        transaction.merchantName = "SAFARICOM";
+      }
+    }
+  } else if (detailsLower.includes("customer transfer") || detailsLower.includes("send money to")) {
+    transaction.rawType = "Sent";
+  } else if (detailsLower.includes("customer transfer of funds charge")) {
+    transaction.rawType = "Charge";
+    transaction.merchantName = "Transfer Fee";
+  } else if (detailsLower.includes("merchant payment") || detailsLower.includes("lipa na m-pesa")) {
     transaction.rawType = "PayBill";
-  } else if (detailsLower.includes("buy goods") || detailsLower.includes("till")) {
+  } else if (detailsLower.includes("buy goods") || detailsLower.includes("till number")) {
     transaction.rawType = "BuyGoods";
   } else if (detailsLower.includes("withdraw") || detailsLower.includes("agent")) {
     transaction.rawType = "Withdrawal";
@@ -289,26 +443,31 @@ function parseTableLine(line: string, lineNumber: number): RawMpesaTransaction |
     transaction.rawType = "Charge";
   }
 
-  // Extract phone number
-  const phoneMatch = line.match(/\b(254\d{9}|\d{10})\b/);
-  if (phoneMatch) {
-    transaction.phoneNumber = phoneMatch[1];
-  }
-
-  // Extract paybill/till/account numbers
-  const paybillMatch = line.match(/paybill[:\s]*(\d+)/i);
-  if (paybillMatch) {
-    transaction.paybillNumber = paybillMatch[1];
-  }
-
-  const tillMatch = line.match(/till[:\s]*(\d+)/i);
-  if (tillMatch) {
-    transaction.tillNumber = tillMatch[1];
-  }
-
-  const accountMatch = line.match(/acc(?:ount)?[:\s]*([A-Z0-9]+)/i);
+  // Extract account numbers for paybill transactions
+  const accountMatch = block.match(/acc(?:ount)?[:\s]*([A-Z0-9]+)/i);
   if (accountMatch) {
     transaction.accountNumber = accountMatch[1];
+  }
+
+  // Validate that transaction has minimum required fields
+  // Must have: transactionCode, date, and amount
+  if (!transaction.transactionCode || !transaction.date || !transaction.amount) {
+    console.log(`⚠️ Skipping transaction ${transaction.transactionCode || 'UNKNOWN'} - missing required fields (date: ${!!transaction.date}, amount: ${!!transaction.amount})`);
+    return null;
+  }
+
+  // Debug log for first few transactions
+  if (blockNumber <= 5) {
+    console.log(`📝 Transaction ${blockNumber}:`, {
+      code: transaction.transactionCode,
+      date: transaction.date,
+      amount: transaction.amount,
+      type: transaction.rawType,
+      merchant: transaction.merchantName,
+      sender: transaction.sender,
+      recipient: transaction.recipient,
+      block: block.substring(0, 150)
+    });
   }
 
   return transaction;
@@ -326,32 +485,39 @@ function parseAsTransactionMessages(text: string): {
   const errors: ParseError[] = [];
 
   // Split into potential transaction blocks
-  // Look for transaction codes (M-PESA format: TKHE4AFXVW, TKH4PAGI8B, etc.)
-  const txnPattern = /([A-Z]{2,4}\d{1,2}[A-Z0-9]{4,6})[^A-Z]{0,500}?(?=[A-Z]{2,4}\d{1,2}[A-Z0-9]{4,6}|$)/g;
+  // Look for transaction codes (M-PESA format: TKHE4AFXVW, TKGE4ADKVV, etc.)
+  // Use same pattern as main parser for consistency
+  const txnPattern = /([TR]K[A-Z0-9]{8,10})/g;
   const matches = Array.from(text.matchAll(txnPattern));
 
-  let lineNumber = 1;
-  for (const match of matches) {
-    const block = match[0];
-    const transactionCode = match[1];
+  // Extract blocks between transaction codes
+  for (let i = 0; i < matches.length; i++) {
+    const currentMatch = matches[i];
+    const nextMatch = matches[i + 1];
+    const transactionCode = currentMatch[1];
+    
+    const startPos = currentMatch.index || 0;
+    const endPos = nextMatch ? (nextMatch.index || text.length) : text.length;
+    const block = text.substring(startPos, endPos).trim();
+
+    // Skip if block is too short or looks like header
+    if (block.length < 20 || block.includes("Receipt No.")) continue;
 
     try {
       const transaction = parseMessageBlock(block, transactionCode);
       if (transaction) {
         transaction.source = MpesaStatementFormat.PDF;
-        transaction.originalText = block;
+        transaction.originalText = block.substring(0, 500);
         transactions.push(transaction);
       }
     } catch (error) {
       errors.push({
-        line: lineNumber,
+        line: i + 1,
         rawText: block.substring(0, 100),
         error: error instanceof Error ? error.message : "Failed to parse block",
         severity: "warning",
       });
     }
-
-    lineNumber++;
   }
 
   return { transactions, errors };

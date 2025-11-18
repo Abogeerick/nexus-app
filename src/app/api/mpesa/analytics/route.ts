@@ -94,10 +94,11 @@ export async function GET(request: NextRequest) {
     let totalExpense = 0;
 
     for (const t of transactions) {
+      const amount = Number(t.amount); // Convert Decimal to number
       if (t.isIncome) {
-        totalIncome += t.amount;
+        totalIncome += amount;
       } else {
-        totalExpense += t.amount;
+        totalExpense += amount;
       }
     }
 
@@ -105,7 +106,7 @@ export async function GET(request: NextRequest) {
     const categoryStats = getCategoryStats(
       transactions.map((t) => ({
         category: t.category,
-        amount: t.amount,
+        amount: Number(t.amount), // Convert to number
         isIncome: t.isIncome,
       }))
     );
@@ -114,7 +115,7 @@ export async function GET(request: NextRequest) {
     const merchantSummary = getMerchantSpendingSummary(
       transactions.map((t) => ({
         normalizedMerchantName: t.normalizedMerchantName,
-        amount: t.amount,
+        amount: Number(t.amount), // Convert to number
         isIncome: t.isIncome,
       }))
     );
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest) {
     const recurringPayments = detectRecurringMerchants(
       transactions.map((t) => ({
         normalizedMerchantName: t.normalizedMerchantName,
-        amount: t.amount,
+        amount: Number(t.amount), // Convert to number
         transactionDate: t.transactionDate,
       })),
       3 // Min 3 occurrences
@@ -140,7 +141,7 @@ export async function GET(request: NextRequest) {
       .filter((t) => !t.isIncome)
       .reduce((acc, t) => {
         const date = t.transactionDate.toISOString().split("T")[0];
-        acc[date] = (acc[date] || 0) + t.amount;
+        acc[date] = (acc[date] || 0) + Number(t.amount); // Convert to number
         return acc;
       }, {} as Record<string, number>);
 
@@ -158,24 +159,24 @@ export async function GET(request: NextRequest) {
     // Largest transactions
     const largestIncome = transactions
       .filter((t) => t.isIncome)
-      .sort((a, b) => b.amount - a.amount)
+      .sort((a, b) => Number(b.amount) - Number(a.amount)) // Convert to number for comparison
       .slice(0, 5)
       .map((t) => ({
         transactionCode: t.transactionCode,
-        amount: t.amount,
+        amount: Number(t.amount), // Convert to number
         counterparty: t.counterpartyName,
-        date: t.transactionDate,
+        date: t.transactionDate.toISOString(),
       }));
 
     const largestExpense = transactions
       .filter((t) => !t.isIncome)
-      .sort((a, b) => b.amount - a.amount)
+      .sort((a, b) => Number(b.amount) - Number(a.amount)) // Convert to number for comparison
       .slice(0, 5)
       .map((t) => ({
         transactionCode: t.transactionCode,
-        amount: t.amount,
+        amount: Number(t.amount), // Convert to number
         merchant: t.normalizedMerchantName || t.counterpartyName,
-        date: t.transactionDate,
+        date: t.transactionDate.toISOString(),
       }));
 
     return NextResponse.json({

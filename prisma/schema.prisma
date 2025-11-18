@@ -210,7 +210,7 @@ model MpesaTransaction {
   accountId               String?              // Link to Mpesa account
   
   // Unique identifiers
-  transactionCode         String               @unique // e.g., "SH12ABC3XY"
+  transactionCode         String               // e.g., "SH12ABC3XY" - NOTE: NOT unique, M-PESA reuses codes!
   transactionHash         String               // For duplicate detection
   
   // Financial data

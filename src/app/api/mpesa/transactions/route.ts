@@ -91,7 +91,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       transactions: transactions.map((t) => ({
         ...t,
+        amount: Number(t.amount), // Convert Decimal to number
+        balanceAfter: t.balanceAfter ? Number(t.balanceAfter) : null,
         timestamp: Number(t.timestamp),
+        transactionDate: t.transactionDate.toISOString(),
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
       })),
       pagination: {
         page,
@@ -101,10 +106,10 @@ export async function GET(request: NextRequest) {
       },
       summary: {
         totalTransactions: summary._count,
-        totalAmount: summary._sum.amount || 0,
-        totalIncome: incomeSum._sum.amount || 0,
-        totalExpense: expenseSum._sum.amount || 0,
-        netAmount: (incomeSum._sum.amount || 0) - (expenseSum._sum.amount || 0),
+        totalAmount: summary._sum.amount ? Number(summary._sum.amount) : 0,
+        totalIncome: incomeSum._sum.amount ? Number(incomeSum._sum.amount) : 0,
+        totalExpense: expenseSum._sum.amount ? Number(expenseSum._sum.amount) : 0,
+        netAmount: (incomeSum._sum.amount ? Number(incomeSum._sum.amount) : 0) - (expenseSum._sum.amount ? Number(expenseSum._sum.amount) : 0),
       },
     });
   } catch (error) {

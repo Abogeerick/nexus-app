@@ -198,11 +198,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Convert BigInt and Decimal values to JSON-serializable format
+    const serializableTransactions = savedTransactions.map((txn) => {
+      // Extract all fields and convert problematic types
+      const { amount, balanceAfter, aiConfidence, confidence, timestamp, createdAt, updatedAt, transactionDate, ...rest } = txn;
+      
+      return {
+        ...rest,
+        amount: amount ? Number(amount) : null,
+        balanceAfter: balanceAfter ? Number(balanceAfter) : null,
+        aiConfidence: aiConfidence ? Number(aiConfidence) : null,
+        confidence: confidence ? Number(confidence) : null,
+        timestamp: timestamp ? Number(timestamp) : null,
+        createdAt: createdAt.toISOString(),
+        updatedAt: updatedAt.toISOString(),
+        transactionDate: transactionDate.toISOString(),
+      };
+    });
+
+    const serializableSummary = {
+      ...parseResult.summary,
+      totalIncome: parseResult.summary.totalIncome ? Number(parseResult.summary.totalIncome) : 0,
+      totalExpense: parseResult.summary.totalExpense ? Number(parseResult.summary.totalExpense) : 0,
+    };
+
     return NextResponse.json({
       success: true,
       importBatchId,
-      transactions: savedTransactions,
-      summary: parseResult.summary,
+      transactions: serializableTransactions,
+      summary: serializableSummary,
       errors: parseResult.errors,
     });
   } catch (error) {
