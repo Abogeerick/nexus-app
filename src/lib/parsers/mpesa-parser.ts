@@ -54,7 +54,7 @@ export async function parseMpesaData(
   if (format) {
     detectedFormat = format;
   } else if (isPDF) {
-    detectedFormat = MpesaStatementFormat.CSV; // PDFs are treated similar to CSV
+    detectedFormat = MpesaStatementFormat.PDF;
   } else {
     detectedFormat = autoDetectFormat ? detectFormat(content as string) : MpesaStatementFormat.TEXT;
   }

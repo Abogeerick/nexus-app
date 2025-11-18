@@ -19,15 +19,57 @@ export async function parseMpesaPDF(
   const errors: ParseError[] = [];
 
   try {
-    // Use require for pdf-parse (CommonJS module, works in Node.js API routes)
+    // Use pdf2json (Node.js native PDF parser)
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse");
+    const PDFParser = require("pdf2json");
     
-    // Extract text from PDF
-    const data = await pdfParse(pdfBuffer);
-    const text = data.text;
+    // Create a promise-based wrapper for pdf2json
+    const extractText = (): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const pdfParser = new PDFParser();
 
-    if (!text || text.trim().length === 0) {
+        pdfParser.on("pdfParser_dataError", (errData: any) => {
+          reject(new Error(errData.parserError || "PDF parsing failed"));
+        });
+
+        pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
+          try {
+            // Extract text from all pages
+            let fullText = "";
+
+            if (pdfData.Pages && Array.isArray(pdfData.Pages)) {
+              for (const page of pdfData.Pages) {
+                if (page.Texts && Array.isArray(page.Texts)) {
+                  for (const text of page.Texts) {
+                    if (text.R && Array.isArray(text.R)) {
+                      for (const run of text.R) {
+                        if (run.T) {
+                          // Decode URI-encoded text
+                          const decodedText = decodeURIComponent(run.T);
+                          fullText += decodedText + " ";
+                        }
+                      }
+                    }
+                  }
+                  fullText += "\n"; // New line after each text block
+                }
+              }
+            }
+
+            resolve(fullText);
+          } catch (error) {
+            reject(error);
+          }
+        });
+
+        // Parse the PDF buffer
+        pdfParser.parseBuffer(pdfBuffer);
+      });
+    };
+
+    const fullText = await extractText();
+
+    if (!fullText || fullText.trim().length === 0) {
       errors.push({
         line: 0,
         rawText: "",
@@ -38,7 +80,7 @@ export async function parseMpesaPDF(
     }
 
     // Parse the extracted text
-    const result = parsePDFText(text);
+    const result = parsePDFText(fullText);
     
     return result;
   } catch (error) {
@@ -111,14 +153,14 @@ function parsePDFText(text: string): {
     try {
       const transaction = parseTableLine(line, i + 1);
       if (transaction) {
-        transaction.source = MpesaStatementFormat.CSV; // PDF is similar to CSV format
+        transaction.source = MpesaStatementFormat.PDF;
         transaction.originalText = line;
         transactions.push(transaction);
       }
     } catch (error) {
       // Some lines may not be transaction data (totals, summaries, etc.)
       // Only log if it looks like it should be a transaction
-      if (line.match(/[A-Z]{2}\d{2}[A-Z0-9]{6}/)) {
+      if (line.match(/[A-Z]{2,4}\d{1,2}[A-Z0-9]{4,6}/)) {
         errors.push({
           line: i + 1,
           rawText: line.substring(0, 100),
@@ -136,9 +178,9 @@ function parsePDFText(text: string): {
  * Parse a line of tabular data from PDF
  */
 function parseTableLine(line: string, lineNumber: number): RawMpesaTransaction | null {
-  // M-PESA PDFs may have data in columns separated by whitespace
-  // Try to extract transaction code first
-  const codeMatch = line.match(/\b([A-Z]{2}\d{2}[A-Z0-9]{6})\b/);
+  // M-PESA PDFs have transaction codes like: TKHE4AFXVW, TKH4PAGI8B, etc.
+  // Pattern: 2-4 letters, 1-2 digits, 4-6 alphanumeric
+  const codeMatch = line.match(/\b([A-Z]{2,4}\d{1,2}[A-Z0-9]{4,6})\b/);
   if (!codeMatch) {
     return null; // Not a transaction line
   }
@@ -147,64 +189,104 @@ function parseTableLine(line: string, lineNumber: number): RawMpesaTransaction |
     transactionCode: codeMatch[1],
   };
 
-  // Extract date/time (various formats)
-  const dateMatch = line.match(
-    /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)/i
-  );
-  if (dateMatch) {
-    transaction.date = dateMatch[1];
-    transaction.time = dateMatch[2];
+  // Extract date/time - M-PESA PDF format: 2025-11-17 19:12:57
+  const dateTimeMatch = line.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+  if (dateTimeMatch) {
+    transaction.date = dateTimeMatch[1];
+    transaction.time = dateTimeMatch[2];
+  } else {
+    // Fallback to other date formats
+    const dateMatch = line.match(
+      /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)/i
+    );
+    if (dateMatch) {
+      transaction.date = dateMatch[1];
+      transaction.time = dateMatch[2];
+    }
   }
 
-  // Extract amounts (look for numbers with decimals)
+  // Extract amounts - M-PESA PDF has Paid In and Withdrawn columns
+  // Look for amounts with proper context
   const amounts = line.match(/\b([\d,]+\.\d{2})\b/g);
   if (amounts && amounts.length > 0) {
-    // Last amount is usually the balance
-    transaction.balance = parseAmount(amounts[amounts.length - 1]);
-
-    // Look for "Paid In" or "Withdrawn" context
-    const paidInMatch = line.match(/paid in[:\s]*([\d,]+\.\d{2})/i);
-    const withdrawnMatch = line.match(/withdrawn[:\s]*([\d,]+\.\d{2})/i);
-
+    // Try to find "Paid In" amount (positive, income)
+    const paidInMatch = line.match(/(?:paid in|paidin)[:\s]*([\d,]+\.\d{2})/i);
     if (paidInMatch) {
       transaction.amount = parseAmount(paidInMatch[1]);
       transaction.rawType = "Income";
-    } else if (withdrawnMatch) {
-      transaction.amount = parseAmount(withdrawnMatch[1]);
-      transaction.rawType = "Expense";
-    } else if (amounts.length >= 2) {
-      // First amount is likely the transaction amount
-      transaction.amount = parseAmount(amounts[0]);
+    } else {
+      // Try to find "Withdrawn" amount (negative, expense)
+      const withdrawnMatch = line.match(/(?:withdrawn|withdraw)[:\s]*-?([\d,]+\.\d{2})/i);
+      if (withdrawnMatch) {
+        transaction.amount = parseAmount(withdrawnMatch[1]);
+        transaction.rawType = "Expense";
+      } else if (amounts.length >= 2) {
+        // If we have multiple amounts, first is usually transaction, last is balance
+        transaction.amount = parseAmount(amounts[0]);
+        // Determine type from details
+      }
+    }
+
+    // Last amount is usually the balance
+    transaction.balance = parseAmount(amounts[amounts.length - 1]);
+  }
+
+  // Extract details from the Details column
+  // M-PESA PDF format examples:
+  // "Funds received from - 2547******362 JULIANA JUMA"
+  // "Customer Transfer Fuliza MPesa to - 07******669 Lilian Lusimba"
+  // "Recharge for Customer With Fuliza to 4093441SAFARICOM DATA BUNDLES by - 07******507 Erick Oluga"
+  
+  // Extract person/merchant names (typically in CAPS or Title Case)
+  const namePatterns = [
+    /(?:from|to|by)\s+[-\d\*]+\s+([A-Z][A-Z\s]{2,})/i, // "from - 2547******362 JULIANA JUMA"
+    /(?:from|to|by)\s+([A-Z][A-Z\s]{2,})/i, // "to ALEX KARIMI"
+    /\b([A-Z]{2,}[A-Z\s]{3,})\b/, // Any all-caps name (3+ chars)
+  ];
+
+  for (const pattern of namePatterns) {
+    const nameMatch = line.match(pattern);
+    if (nameMatch) {
+      const name = nameMatch[1].trim();
+      // Filter out common non-name words
+      if (!/^(RECEIVED|SENT|PAID|TRANSFER|CUSTOMER|FUNDS|MONEY|MPESA|FULIZA|OVERDRAFT|LOAN|REPAYMENT|CHARGE|COMPLETED|STATUS|DETAILS)$/i.test(name)) {
+        if (transaction.rawType === "Income" || line.toLowerCase().includes("received") || line.toLowerCase().includes("from")) {
+          transaction.sender = name;
+        } else {
+          transaction.recipient = name;
+          transaction.merchantName = name;
+        }
+        break;
+      }
     }
   }
 
-  // Try to extract merchant/party information
-  // This varies by PDF format, but typically includes names in CAPS
-  const detailsMatch = line.match(/[A-Z\s]{10,}/);
-  if (detailsMatch) {
-    const details = detailsMatch[0].trim();
-    
-    // Check if it's a known transaction type
-    if (details.includes("RECEIVED") || details.includes("FROM")) {
-      transaction.rawType = "Received";
-      const nameMatch = details.match(/FROM\s+([A-Z\s]+)/);
-      if (nameMatch) {
-        transaction.sender = nameMatch[1].trim();
-      }
-    } else if (details.includes("SENT") || details.includes("TO")) {
-      transaction.rawType = "Sent";
-      const nameMatch = details.match(/TO\s+([A-Z\s]+)/);
-      if (nameMatch) {
-        transaction.recipient = nameMatch[1].trim();
-      }
-    } else if (details.includes("PAID")) {
-      transaction.rawType = "Payment";
-      transaction.merchantName = details.replace(/PAID|TO/gi, "").trim();
-    } else if (details.includes("AIRTIME")) {
-      transaction.rawType = "Airtime";
-    } else if (details.includes("WITHDRAW")) {
-      transaction.rawType = "Withdrawal";
+  // Determine transaction type from details
+  const detailsLower = line.toLowerCase();
+  
+  if (detailsLower.includes("funds received") || detailsLower.includes("received from")) {
+    transaction.rawType = "Received";
+  } else if (detailsLower.includes("send money") || detailsLower.includes("transfer") && detailsLower.includes("to")) {
+    transaction.rawType = "Sent";
+  } else if (detailsLower.includes("recharge") || detailsLower.includes("bundle purchase") || detailsLower.includes("data bundles")) {
+    transaction.rawType = "Airtime";
+    // Extract merchant from bundle purchases
+    const bundleMatch = line.match(/(\d+[A-Z\s]+(?:DATA|BUNDLES|AIRTIME))/i);
+    if (bundleMatch) {
+      transaction.merchantName = bundleMatch[1].trim();
     }
+  } else if (detailsLower.includes("fuliza") && detailsLower.includes("repayment")) {
+    transaction.rawType = "FulizaRepayment";
+  } else if (detailsLower.includes("fuliza") && (detailsLower.includes("loan") || detailsLower.includes("overdraft"))) {
+    transaction.rawType = "FulizaLoan";
+  } else if (detailsLower.includes("paybill") || detailsLower.includes("lipa na m-pesa")) {
+    transaction.rawType = "PayBill";
+  } else if (detailsLower.includes("buy goods") || detailsLower.includes("till")) {
+    transaction.rawType = "BuyGoods";
+  } else if (detailsLower.includes("withdraw") || detailsLower.includes("agent")) {
+    transaction.rawType = "Withdrawal";
+  } else if (detailsLower.includes("charge") || detailsLower.includes("fee")) {
+    transaction.rawType = "Charge";
   }
 
   // Extract phone number
@@ -244,9 +326,8 @@ function parseAsTransactionMessages(text: string): {
   const errors: ParseError[] = [];
 
   // Split into potential transaction blocks
-  // Look for transaction codes
-  // Using [\s\S] instead of . with 's' flag for ES2017 compatibility
-  const txnPattern = /([A-Z]{2}\d{2}[A-Z0-9]{6})[^A-Z]{0,500}?(?=[A-Z]{2}\d{2}[A-Z0-9]{6}|$)/g;
+  // Look for transaction codes (M-PESA format: TKHE4AFXVW, TKH4PAGI8B, etc.)
+  const txnPattern = /([A-Z]{2,4}\d{1,2}[A-Z0-9]{4,6})[^A-Z]{0,500}?(?=[A-Z]{2,4}\d{1,2}[A-Z0-9]{4,6}|$)/g;
   const matches = Array.from(text.matchAll(txnPattern));
 
   let lineNumber = 1;
@@ -257,7 +338,7 @@ function parseAsTransactionMessages(text: string): {
     try {
       const transaction = parseMessageBlock(block, transactionCode);
       if (transaction) {
-        transaction.source = MpesaStatementFormat.TEXT;
+        transaction.source = MpesaStatementFormat.PDF;
         transaction.originalText = block;
         transactions.push(transaction);
       }
