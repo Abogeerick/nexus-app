@@ -214,7 +214,7 @@ The system automatically:
 
 ```json
 {
-  "pdf-parse": "^1.1.1" // Free, open-source PDF text extraction
+  "pdf2json": "^3.1.3" // Free, open-source, Node.js native PDF parser
 }
 ```
 
@@ -223,9 +223,11 @@ The system automatically:
 ```
 PDF File (Buffer)
     ↓
-pdf-parse (Extract Text)
+pdf2json (Parse PDF Structure)
     ↓
-Text Content
+Extract Text from JSON
+    ↓
+Decode URI-encoded Text
     ↓
 Format Detection (Table vs Message)
     ↓
@@ -253,12 +255,28 @@ Database Storage
 
 ### Issue: "PDF contains no readable text"
 
-**Cause**: PDF might be scanned image or corrupted
+**Cause**: PDF might be scanned image, corrupted, or password-protected
 
 **Solutions**:
 - Ensure PDF is not a scanned image (OCR not supported yet)
+- **If password-protected**: Remove password protection first
+  - Use Adobe Acrobat: File → Properties → Security → No Security
+  - Or online tools: ilovepdf.com, smallpdf.com (remove protection)
 - Try re-downloading the PDF from M-PESA
 - Check if PDF opens normally in PDF reader
+
+### Issue: "PDF parsing failed" or "Encryption error"
+
+**Cause**: PDF is password-protected or encrypted
+
+**Solutions**:
+1. **Remove password protection**:
+   - Open PDF in Adobe Acrobat
+   - File → Properties → Security
+   - Change "Security Method" to "No Security"
+   - Save the file
+2. **Alternative**: Use online PDF password remover (if you know the password)
+3. **M-PESA statements**: Usually not password-protected when downloaded directly
 
 ### Issue: "Failed to parse PDF"
 

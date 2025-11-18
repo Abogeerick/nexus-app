@@ -362,9 +362,7 @@ Get analytics and insights.
     "Transport": { "count": 20, "total": 3000, "percentage": 8.6 }
   },
   "merchants": {
-    "top": [
-      { "merchant": "Naivas Supermarket", "totalSpent": 5000, "transactionCount": 15 }
-    ]
+    "top": [{ "merchant": "Naivas Supermarket", "totalSpent": 5000, "transactionCount": 15 }]
   },
   "recurringPayments": [
     { "merchant": "Netflix", "frequency": 12, "averageAmount": 1200, "isLikelySubscription": true }
@@ -516,6 +514,7 @@ npm test -- --coverage
 ### CSV Sample (`public/samples/mpesa-sample.csv`)
 
 10 sample transactions covering:
+
 - Received money
 - Sent money
 - Paybill payments
@@ -534,6 +533,7 @@ npm test -- --coverage
 ### Issue: Parse errors on CSV upload
 
 **Solution:**
+
 - Ensure CSV is in correct format (check headers)
 - Try "Auto-detect" format option
 - Check for special characters in file
@@ -541,6 +541,7 @@ npm test -- --coverage
 ### Issue: Duplicates not detected
 
 **Solution:**
+
 - Ensure `skipDuplicates` is set to `true`
 - Check if transaction codes are unique
 - Verify timestamp accuracy
@@ -548,6 +549,7 @@ npm test -- --coverage
 ### Issue: Categories not accurate
 
 **Solution:**
+
 - Run classification: `POST /api/mpesa/classify` with `applyToAll: true`
 - Update merchant aliases in `merchant-normalizer.ts`
 - Add custom keywords to category rules
@@ -555,6 +557,7 @@ npm test -- --coverage
 ### Issue: SMS not parsing
 
 **Solution:**
+
 - Ensure SMS format matches M-PESA message structure
 - Check for transaction code (e.g., SH12ABC3XY1)
 - Verify amount format (Ksh or KES)
@@ -620,6 +623,7 @@ Part of Nexus Finance Analyst - MIT License
 ## Support
 
 For issues or questions:
+
 - Check the Troubleshooting section
 - Review sample data files
 - Examine unit tests for examples
@@ -628,4 +632,3 @@ For issues or questions:
 ---
 
 **Built with ❤️ for the Kenyan market**
-
