@@ -1,0 +1,24 @@
+SH12ABC3XY1 Confirmed. You have received Ksh500.00 from JOHN DOE 254712345678 on 1/11/24 at 10:30 AM New M-PESA balance is Ksh5,500.00
+
+SH12ABC3XY2 Confirmed. Ksh1,000.00 sent to JANE SMITH 254722222222 on 1/11/24 at 2:15 PM New M-PESA balance is Ksh4,500.00
+
+SH12ABC3XY3 Confirmed. Ksh50.00 paid to NAIVAS SUPERMARKET. Account Number 123456 on 1/11/24 at 3:00 PM New M-PESA balance is Ksh4,450.00
+
+SH12ABC3XY4 Confirmed. Ksh200.00 paid to JAVA HOUSE for account GOODS. Till Number 654321 on 2/11/24 at 9:00 AM New M-PESA balance is Ksh4,250.00
+
+SH12ABC3XY5 Confirmed. Ksh2,000.00 withdrawn from ABC AGENT on 2/11/24 at 5:00 PM New M-PESA balance is Ksh2,250.00
+
+SH12ABC3XY6 Confirmed. Ksh100.00 airtime purchased on 3/11/24 at 6:00 PM New M-PESA balance is Ksh2,150.00
+
+SH12ABC3XY7 Confirmed. Ksh1,500.00 paid to KPLC. Account Number 789012 on 3/11/24 at 7:30 PM New M-PESA balance is Ksh650.00
+
+SH12ABC3XY8 Confirmed. You have received Ksh5,000.00 from SALARY PAYMENT 254700000000 on 4/11/24 at 11:00 AM New M-PESA balance is Ksh5,650.00
+
+SH12ABC3XY9 Confirmed. Ksh300.00 paid to UBER KENYA. Till Number 111222 on 4/11/24 at 2:45 PM New M-PESA balance is Ksh5,350.00
+
+SH12ABC3XY10 Confirmed. Ksh150.00 paid to GOODLIFE PHARMACY. Till Number 333444 on 5/11/24 at 8:30 AM New M-PESA balance is Ksh5,200.00
+
+SH12ABC3XY11 Confirmed. Ksh800.00 sent to MARY MWANGI 254733333333 on 5/11/24 at 3:00 PM New M-PESA balance is Ksh4,400.00
+
+SH12ABC3XY12 Confirmed. Ksh250.00 paid to CARREFOUR. Till Number 555666 on 6/11/24 at 10:15 AM New M-PESA balance is Ksh4,150.00
+
