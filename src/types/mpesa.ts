@@ -1,8 +1,4 @@
-/**
- * MPESA Transaction Types
- *
- * Comprehensive type definitions for MPESA transactions
- */
+//Mpesa Transaction Types
 
 export enum MpesaTransactionType {
   // Money received
@@ -41,11 +37,12 @@ export enum MpesaStatementFormat {
   SMS = "SMS",
   TEXT = "TEXT",
   MANUAL = "MANUAL",
+  PDF = "PDF",
 }
 
 export interface RawMpesaTransaction {
-  // Core fields (from all formats)
-  transactionCode?: string; // e.g., "SH12ABC3XY"
+  // Core fields 
+  transactionCode?: string; 
   amount?: number;
   balance?: number;
   date?: Date | string;
@@ -98,7 +95,7 @@ export interface NormalizedMpesaTransaction {
   counterpartyName: string; // Normalized name of other party
   counterpartyPhone: string | null;
   merchantName: string | null;
-  normalizedMerchantName: string | null; // Cleaned merchant name
+  normalizedMerchantName: string | null; 
 
   // Business identifiers
   paybillNumber: string | null;
@@ -106,13 +103,13 @@ export interface NormalizedMpesaTransaction {
   accountNumber: string | null;
 
   // Metadata
-  description: string; // Human-readable description
+  description: string; 
   source: MpesaStatementFormat;
   originalText: string;
   confidence: number;
   parseErrors: string[];
 
-  // AI enhancements (optional)
+  // AI enhancements 
   aiCategory?: string;
   aiMerchantName?: string;
   aiConfidence?: number;
