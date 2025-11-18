@@ -72,8 +72,9 @@ model Account {
   updatedAt       DateTime    @updatedAt
 
   // Relations
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions    Transaction[]
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
+  mpesaTransactions MpesaTransaction[]
 
   @@index([userId])
   @@map("accounts")
@@ -168,6 +169,107 @@ model Transaction {
   @@index([userId, transactionDate])
   @@index([accountId])
   @@map("transactions")
+}
+
+// ============================================
+// MPESA TRANSACTIONS (Dedicated Model)
+// ============================================
+
+enum MpesaTransactionType {
+  RECEIVED_FROM_PERSON
+  RECEIVED_FROM_BUSINESS
+  RECEIVED_FROM_AGENT
+  REVERSAL_RECEIVED
+  SENT_TO_PERSON
+  SENT_TO_BUSINESS
+  SENT_TO_AGENT
+  WITHDRAW_AT_AGENT
+  WITHDRAW_AT_ATM
+  PAYBILL
+  BUY_GOODS
+  LIPA_NA_MPESA
+  AIRTIME_PURCHASE
+  AIRTIME_FOR_OTHER
+  FULIZA_LOAN
+  FULIZA_REPAYMENT
+  REVERSAL_SENT
+  UNKNOWN
+}
+
+enum MpesaStatementFormat {
+  CSV
+  SMS
+  TEXT
+  MANUAL
+  PDF
+}
+
+model MpesaTransaction {
+  id                      String               @id @default(cuid())
+  userId                  String
+  accountId               String?              // Link to Mpesa account
+  
+  // Unique identifiers
+  transactionCode         String               @unique // e.g., "SH12ABC3XY"
+  transactionHash         String               // For duplicate detection
+  
+  // Financial data
+  amount                  Float
+  balanceAfter            Float?
+  currency                String               @default("KES")
+  
+  // Timestamp
+  transactionDate         DateTime
+  timestamp               BigInt               // Unix timestamp for fast queries
+  
+  // Transaction type
+  type                    MpesaTransactionType
+  category                String               // Derived category
+  isIncome                Boolean              // Quick filter for income/expense
+  
+  // Parties involved
+  counterpartyName        String               // Normalized name
+  counterpartyPhone       String?
+  merchantName            String?
+  normalizedMerchantName  String?              // Cleaned merchant name
+  
+  // Business identifiers
+  paybillNumber           String?
+  tillNumber              String?
+  accountNumber           String?
+  
+  // Metadata
+  description             String               @db.Text
+  source                  MpesaStatementFormat // CSV, SMS, TEXT, MANUAL
+  originalText            String               @db.Text
+  confidence              Float                // Parse confidence (0-1)
+  parseErrors             Json?                // Array of parse errors
+  
+  // AI enhancements (optional)
+  aiCategory              String?
+  aiMerchantName          String?
+  aiConfidence            Float?
+  isAnomaly               Boolean              @default(false)
+  anomalyReason           String?
+  
+  // Import metadata
+  importBatchId           String?              // Group transactions from same import
+  isDuplicate             Boolean              @default(false)
+  duplicateOfId           String?              // Reference to original if duplicate
+  
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  
+  // Relations
+  account                 Account?             @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  
+  @@index([userId, transactionDate])
+  @@index([transactionCode])
+  @@index([transactionHash])
+  @@index([accountId])
+  @@index([importBatchId])
+  @@index([timestamp])
+  @@map("mpesa_transactions")
 }
 
 // Asset-specific transactions (buy/sell)
