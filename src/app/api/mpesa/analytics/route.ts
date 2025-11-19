@@ -210,7 +210,14 @@ export async function GET(request: NextRequest) {
       },
       categories: categoryStats,
       merchants: {
-        top: merchantSummary.slice(0, 10),
+        top: merchantSummary.slice(0, 10).map(m => ({
+          merchant: m.merchant,
+          amount: m.totalSpent, // Map totalSpent to amount for UI compatibility
+          totalSpent: m.totalSpent,
+          count: m.transactionCount,
+          transactionCount: m.transactionCount,
+          averageTransaction: m.averageTransaction,
+        })),
         all: merchantSummary.length,
       },
       recurringPayments: recurringPayments.filter((p) => p.isLikelySubscription),

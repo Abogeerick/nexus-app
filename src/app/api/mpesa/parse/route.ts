@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/auth";
 import { prisma } from "@/lib/prisma";
 import { parseMpesaData } from "@/lib/parsers/mpesa-parser";
-import { MpesaStatementFormat } from "@/types/mpesa";
+import { MpesaStatementFormat, NormalizedMpesaTransaction } from "@/types/mpesa";
 import { nanoid } from "nanoid";
 
 export async function POST(request: NextRequest) {
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate format if provided
-    if (format && !Object.values(MpesaStatementFormat).includes(format)) {
+    if (format && !Object.values(MpesaStatementFormat).includes(format as MpesaStatementFormat)) {
       return NextResponse.json({ error: "Invalid format" }, { status: 400 });
     }
 
@@ -124,11 +124,11 @@ export async function POST(request: NextRequest) {
       ...t,
       timestamp: Number(t.timestamp),
       parseErrors: Array.isArray(t.parseErrors) ? t.parseErrors as string[] : [],
-    }));
+    })) as NormalizedMpesaTransaction[];
 
     // Parse the data
     const parseResult = await parseMpesaData(content, {
-      format,
+      format: format as MpesaStatementFormat | undefined,
       autoDetectFormat: !format,
       skipDuplicates,
       existingTransactions: existingNormalized,
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
     // Generate import batch ID
     const importBatchId = nanoid();
 
-    // Save transactions to database
+    // Save transactions to database (including AI classification data)
     const savedTransactions = [];
     for (const transaction of parseResult.transactions) {
       const saved = await prisma.mpesaTransaction.create({
@@ -178,6 +178,9 @@ export async function POST(request: NextRequest) {
           originalText: transaction.originalText,
           confidence: transaction.confidence,
           parseErrors: transaction.parseErrors,
+          // AI classification fields
+          aiCategory: transaction.aiCategory || null,
+          aiConfidence: transaction.aiConfidence || null,
         },
       });
 
