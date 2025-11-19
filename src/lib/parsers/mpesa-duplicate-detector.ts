@@ -55,8 +55,8 @@ export function findDuplicates(
       if (match === transaction) continue; // Skip self
 
       // Only mark as duplicate if code, amount, AND timestamp are exactly the same
-      const matchTime = match.timestamp instanceof Date ? match.timestamp.getTime() : new Date(match.timestamp).getTime();
-      const txnTime = transaction.timestamp instanceof Date ? transaction.timestamp.getTime() : new Date(transaction.timestamp).getTime();
+      const matchTime = typeof match.timestamp === 'number' ? match.timestamp : new Date(match.timestamp).getTime();
+      const txnTime = typeof transaction.timestamp === 'number' ? transaction.timestamp : new Date(transaction.timestamp).getTime();
       
       if (
         match.amount === transaction.amount &&

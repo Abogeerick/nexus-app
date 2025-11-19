@@ -93,10 +93,10 @@ export async function parseMpesaData(
     });
   }
 
-  // Step 3: Normalize transactions
+  // Step 3: Normalize transactions (now with AI classification)
   let normalizedTransactions: NormalizedMpesaTransaction[] = [];
   if (rawTransactions.length > 0) {
-    const normResult = normalizeMpesaTransactions(rawTransactions);
+    const normResult = await normalizeMpesaTransactions(rawTransactions);
     normalizedTransactions = normResult.normalized;
     errors.push(...normResult.errors);
   }
@@ -214,14 +214,14 @@ function generateSummary(
 /**
  * Parse a single manual transaction entry
  */
-export function parseManualTransaction(data: {
+export async function parseManualTransaction(data: {
   amount: number;
   date: Date;
   type: string;
   description: string;
   merchant?: string;
   phone?: string;
-}): NormalizedMpesaTransaction {
+}): Promise<NormalizedMpesaTransaction> {
   // Generate a pseudo transaction code for manual entries
   const transactionCode = `MAN${Date.now().toString(36).toUpperCase()}`;
 
@@ -236,8 +236,8 @@ export function parseManualTransaction(data: {
     source: MpesaStatementFormat.MANUAL,
   };
 
-  // Normalize it
-  const result = normalizeMpesaTransactions([raw]);
+  // Normalize it (now async with AI classification)
+  const result = await normalizeMpesaTransactions([raw]);
 
   if (result.normalized.length > 0) {
     return result.normalized[0];
