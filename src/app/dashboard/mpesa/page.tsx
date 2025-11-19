@@ -16,6 +16,11 @@ import {
   Calendar,
   Filter,
   Sparkles,
+  Edit,
+  Trash2,
+  Search,
+  X,
+  Save,
 } from "lucide-react";
 import {
   AreaChart,
@@ -86,6 +91,11 @@ export default function MpesaDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedType, setSelectedType] = useState<"all" | "income" | "expense">("all");
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [showTransactionList, setShowTransactionList] = useState(false);
   const { theme } = useTheme();
 
   useEffect(() => {
@@ -102,6 +112,9 @@ export default function MpesaDashboardPage() {
         period,
         ...(startDate && { startDate }),
         ...(endDate && { endDate }),
+        ...(searchQuery && { search: searchQuery }),
+        ...(selectedCategory !== "all" && { category: selectedCategory }),
+        ...(selectedType !== "all" && { isIncome: selectedType === "income" ? "true" : "false" }),
       });
 
       const [transResponse, analyticsResponse] = await Promise.all([
@@ -142,7 +155,56 @@ export default function MpesaDashboardPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [searchQuery, selectedCategory, selectedType]);
+
+  const handleEdit = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTransaction) return;
+
+    try {
+      const response = await fetch(`/api/mpesa/transactions/${editingTransaction.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: editingTransaction.category,
+          merchantName: editingTransaction.merchantName,
+          normalizedMerchantName: editingTransaction.normalizedMerchantName,
+          description: editingTransaction.description,
+          isIncome: editingTransaction.isIncome,
+        }),
+      });
+
+      if (response.ok) {
+        setEditingTransaction(null);
+        fetchData();
+      }
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this transaction?")) return;
+
+    try {
+      const response = await fetch(`/api/mpesa/transactions/${id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        fetchData();
+      }
+    } catch (error) {
+      console.error("Error deleting transaction:", error);
+    }
+  };
+
+  const categories = analytics
+    ? Object.keys(analytics.categories).sort()
+    : ["Groceries", "Dining", "Transport", "Utilities", "Healthcare", "Entertainment", "Financial", "Transfer"];
 
   const handleDateFilter = () => {
     if (dateRange?.start && dateRange?.end) {
@@ -540,6 +602,227 @@ export default function MpesaDashboardPage() {
                   ))}
               </div>
             </div>
+
+            {/* Search and Filter Bar */}
+            <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search transactions..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="all">All Categories</option>
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedType}
+                  onChange={(e) => setSelectedType(e.target.value as "all" | "income" | "expense")}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="all">All Types</option>
+                  <option value="income">Income Only</option>
+                  <option value="expense">Expenses Only</option>
+                </select>
+                <button
+                  onClick={() => setShowTransactionList(!showTransactionList)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  {showTransactionList ? "Hide" : "Show"} Transactions
+                </button>
+              </div>
+            </div>
+
+            {/* Transaction List */}
+            {showTransactionList && (
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 mb-8">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  All Transactions ({transactions.length})
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200 dark:border-gray-700">
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          Date
+                        </th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          Code
+                        </th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          Description
+                        </th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          Category
+                        </th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          Merchant
+                        </th>
+                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          Amount
+                        </th>
+                        <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.slice(0, 50).map((transaction) => (
+                        <tr
+                          key={transaction.id}
+                          className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        >
+                          <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
+                            {new Date(transaction.transactionDate).toLocaleDateString("en-KE", {
+                              dateStyle: "short",
+                            })}
+                          </td>
+                          <td className="py-3 px-4 text-sm font-mono text-gray-600 dark:text-gray-400">
+                            {transaction.transactionCode}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-900 dark:text-white max-w-xs truncate">
+                            {editingTransaction?.id === transaction.id ? (
+                              <input
+                                type="text"
+                                value={editingTransaction.description || ""}
+                                onChange={(e) =>
+                                  setEditingTransaction({
+                                    ...editingTransaction,
+                                    description: e.target.value,
+                                  })
+                                }
+                                className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                            ) : (
+                              transaction.description || "N/A"
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            {editingTransaction?.id === transaction.id ? (
+                              <select
+                                value={editingTransaction.category}
+                                onChange={(e) =>
+                                  setEditingTransaction({
+                                    ...editingTransaction,
+                                    category: e.target.value,
+                                  })
+                                }
+                                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              >
+                                {categories.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                {transaction.category}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
+                            {editingTransaction?.id === transaction.id ? (
+                              <input
+                                type="text"
+                                value={editingTransaction.merchantName || ""}
+                                onChange={(e) =>
+                                  setEditingTransaction({
+                                    ...editingTransaction,
+                                    merchantName: e.target.value,
+                                  })
+                                }
+                                className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                            ) : (
+                              transaction.merchantName || transaction.normalizedMerchantName || "N/A"
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span
+                              className={`text-sm font-semibold ${
+                                transaction.isIncome
+                                  ? "text-green-600 dark:text-green-400"
+                                  : "text-red-600 dark:text-red-400"
+                              }`}
+                            >
+                              {transaction.isIncome ? "+" : "-"}KES {transaction.amount.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center justify-center gap-2">
+                              {editingTransaction?.id === transaction.id ? (
+                                <>
+                                  <button
+                                    onClick={handleSaveEdit}
+                                    className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
+                                    title="Save"
+                                  >
+                                    <Save className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingTransaction(null)}
+                                    className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(transaction)}
+                                    className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(transaction.id)}
+                                    className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {transactions.length > 50 && (
+                    <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-4">
+                      Showing first 50 transactions. Use filters to narrow down results.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Unknown Transactions */}
             {unknownTransactions.length > 0 && (

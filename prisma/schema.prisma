@@ -40,6 +40,7 @@ model User {
   goals             Goal[]
   priceAlerts       PriceAlert[]
   netWorthHistory   NetWorthSnapshot[]
+  budgets           Budget[]
 
   @@index([email])
   @@map("users")
@@ -428,5 +429,35 @@ model Subscription {
 
   @@index([userId])
   @@map("subscriptions")
+}
+
+// ============================================
+// BUDGETS
+// ============================================
+
+enum BudgetPeriod {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+model Budget {
+  id              String       @id @default(cuid())
+  userId          String
+  category        String       // Category name (e.g., "Groceries", "Transport")
+  amount          Float        // Budget amount in KES
+  period          BudgetPeriod @default(MONTHLY)
+  startDate       DateTime     @default(now())
+  endDate         DateTime?    // Optional end date
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, category])
+  @@index([userId, isActive])
+  @@map("budgets")
 }
 
