@@ -1,26 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import DashboardLayout from "@/components/layout/DashboardLayout";
 import { MpesaPDFUpload } from "@/components/mpesa/MpesaPDFUpload";
 import {
   TrendingUp,
   TrendingDown,
   Wallet,
-  ShoppingCart,
   Users,
   AlertTriangle,
   Download,
   RefreshCw,
-  Moon,
-  Sun,
   Calendar,
   Filter,
+  Sparkles,
 } from "lucide-react";
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
@@ -80,12 +79,20 @@ const COLORS = [
 ];
 
 export default function MpesaDashboardPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/auth/signin");
+    }
+  }, [status, router]);
 
   const fetchData = async (startDate?: string, endDate?: string) => {
     setLoading(true);
@@ -154,78 +161,137 @@ export default function MpesaDashboardPage() {
 
   const hasData = transactions.length > 0;
 
+  if (status === "loading") {
+    return (
+      <DashboardLayout>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   if (!hasData && !loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                M-PESA Financial Analytics
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
-                Upload your M-PESA statement to get started
-              </p>
+      <DashboardLayout user={session?.user ? { name: session.user.name, email: session.user.email } : undefined}>
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-8 px-4">
+          <div className="max-w-7xl mx-auto">
+            {/* Header */}
+            <div className="mb-8">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
+                  <Wallet className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                    M-PESA Financial Dashboard
+                  </h1>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    AI-powered transaction analysis
+                  </p>
+                </div>
+              </div>
             </div>
-            <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              {theme === "dark" ? (
-                <Sun className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-              ) : (
-                <Moon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-              )}
-            </button>
-          </div>
 
-          {/* Upload Section */}
-          <MpesaPDFUpload onSuccess={fetchData} />
+            {/* Welcome Card */}
+            <div className="mb-8 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl p-8 border border-green-200 dark:border-green-800">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center">
+                  <Sparkles className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                    Welcome to M-PESA Analytics!
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Upload your M-PESA statement to unlock AI-powered insights
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-white dark:bg-gray-900 rounded-xl p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                      <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">AI Categorization</h3>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Automatic transaction categorization with 95%+ accuracy
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-gray-900 rounded-xl p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                      <TrendingDown className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Spending Insights</h3>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Discover patterns and trends in your spending habits
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-gray-900 rounded-xl p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
+                      <Users className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Merchant Analysis</h3>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Track where your money goes with detailed merchant breakdowns
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Upload Section */}
+            <MpesaPDFUpload onSuccess={fetchData} />
+          </div>
         </div>
-      </div>
+      </DashboardLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              M-PESA Financial Dashboard
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              {analytics?.summary.totalTransactions || transactions.length} transactions analyzed
-            </p>
+    <DashboardLayout user={session?.user ? { name: session.user.name, email: session.user.email } : undefined}>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-8 px-4">
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center">
+                <Wallet className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                  M-PESA Financial Dashboard
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400 mt-1">
+                  {analytics?.summary.totalTransactions || transactions.length} transactions analyzed
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowUpload(!showUpload)}
+                className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg hover:scale-105 transition-all font-semibold flex items-center gap-2"
+              >
+                <Download className="w-5 h-5" />
+                Upload Statement
+              </button>
+              <button
+                onClick={() => fetchData()}
+                className="p-3 rounded-xl bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-800 hover:border-green-500 dark:hover:border-green-400 transition-all"
+                title="Refresh data"
+              >
+                <RefreshCw className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+              </button>
+            </div>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setShowUpload(!showUpload)}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Upload Statement
-            </button>
-            <button
-              onClick={() => fetchData()}
-              className="p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              <RefreshCw className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-            </button>
-            <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              {theme === "dark" ? (
-                <Sun className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-              ) : (
-                <Moon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-              )}
-            </button>
-          </div>
-        </div>
 
         {/* Date Filter */}
         <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
@@ -527,7 +593,8 @@ export default function MpesaDashboardPage() {
             )}
           </>
         )}
+        </div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }
