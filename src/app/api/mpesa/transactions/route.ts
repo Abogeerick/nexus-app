@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const isIncome = searchParams.get("isIncome");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
+    const period = searchParams.get("period"); // 7d, 30d, 90d, 1y, all, custom
     const search = searchParams.get("search");
     const importBatchId = searchParams.get("importBatchId");
 
@@ -45,10 +46,41 @@ export async function GET(request: NextRequest) {
     if (isIncome !== null) where.isIncome = isIncome === "true";
     if (importBatchId) where.importBatchId = importBatchId;
 
-    if (startDate || endDate) {
+    // Handle date filtering - either by period or explicit dates
+    if (startDate || endDate || (period && period !== "all")) {
       where.transactionDate = {};
-      if (startDate) where.transactionDate.gte = new Date(startDate);
-      if (endDate) where.transactionDate.lte = new Date(endDate);
+      
+      // If explicit dates provided, use them
+      if (startDate) {
+        where.transactionDate.gte = new Date(startDate);
+      } else if (period && period !== "all" && period !== "custom") {
+        // Calculate date range based on period
+        const now = new Date();
+        let dateFilter: Date | undefined;
+        
+        switch (period) {
+          case "7d":
+            dateFilter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case "30d":
+            dateFilter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          case "90d":
+            dateFilter = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+            break;
+          case "1y":
+            dateFilter = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+            break;
+        }
+        
+        if (dateFilter) {
+          where.transactionDate.gte = dateFilter;
+        }
+      }
+      
+      if (endDate) {
+        where.transactionDate.lte = new Date(endDate);
+      }
     }
 
     if (search) {
@@ -122,10 +154,24 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Fetch transactions error:", error);
+    
+    // Check if it's a database connection error
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorMessage.includes("Can't reach database server") || errorMessage.includes("database server")) {
+      return NextResponse.json(
+        {
+          error: "Database connection error",
+          message: "Unable to connect to the database. Please check your database connection settings.",
+          details: process.env.NODE_ENV === "development" ? errorMessage : undefined,
+        },
+        { status: 503 } // Service Unavailable
+      );
+    }
+    
     return NextResponse.json(
       {
         error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
+        message: errorMessage,
       },
       { status: 500 }
     );

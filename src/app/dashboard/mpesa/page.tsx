@@ -102,6 +102,21 @@ export default function MpesaDashboardPage() {
         fetch(`/api/mpesa/analytics?${params.toString()}`),
       ]);
 
+      // Handle errors
+      if (!transResponse.ok) {
+        const errorData = await transResponse.json().catch(() => ({}));
+        console.error("Transactions API error:", errorData);
+        if (transResponse.status === 503) {
+          // Database connection error
+          alert("Database connection error. Please check your database connection.");
+        }
+      }
+
+      if (!analyticsResponse.ok) {
+        const errorData = await analyticsResponse.json().catch(() => ({}));
+        console.error("Analytics API error:", errorData);
+      }
+
       if (transResponse.ok) {
         const transData = await transResponse.json();
         setTransactions(transData.transactions || []);
