@@ -214,20 +214,61 @@ export function classifyTransaction(
     };
   }
 
+  // Combine merchant name and description for analysis
+  const text = `${merchantName || ""} ${description}`.toLowerCase();
+
+  // Handle M-PESA specific transaction descriptions from PDFs
+  if (text.includes("fuliza") || text.includes("overdraft") || text.includes("credit party")) {
+    return {
+      category: "Financial",
+      subcategory: "Credit/Overdraft",
+      confidence: 0.95,
+      reasoning: "Fuliza or overdraft transaction",
+    };
+  }
+
+  if (text.includes("bundle") || text.includes("data bundles") || text.includes("recharge")) {
+    return {
+      category: "Utilities",
+      subcategory: "Data/Airtime",
+      confidence: 0.95,
+      reasoning: "Data bundle or recharge transaction",
+    };
+  }
+
+  if (text.includes("send money to micro") || text.includes("payment to small business")) {
+    return {
+      category: "Shopping",
+      subcategory: "Small Business",
+      confidence: 0.85,
+      reasoning: "Payment to small business",
+    };
+  }
+
+  if (text.includes("merchant payment") || text.includes("customer bundle purchase")) {
+    return {
+      category: "Shopping",
+      subcategory: "Merchant",
+      confidence: 0.85,
+      reasoning: "Merchant payment",
+    };
+  }
+
   // Handle charges and fees
   if (type === "Charge" || 
-      merchantName?.toLowerCase().includes("transfer fee") ||
-      merchantName?.toLowerCase().includes("safaricom fee") ||
-      description?.toLowerCase().includes("charge")) {
+      text.includes("transfer fee") ||
+      text.includes("safaricom fee") ||
+      text.includes("transaction charge") ||
+      text.includes("charge")) {
     return {
       category: "Financial",
       subcategory: "Fees & Charges",
       confidence: 0.95,
-      reasoning: "Safaricom transaction charge or fee",
+      reasoning: "Transaction charge or fee",
     };
   }
 
-  if (type === "RECEIVED_FROM_PERSON") {
+  if (type === "RECEIVED_FROM_PERSON" || text.includes("received from")) {
     return {
       category: "Income",
       subcategory: "Personal Transfer",
@@ -236,7 +277,7 @@ export function classifyTransaction(
     };
   }
 
-  if (type === "SENT_TO_PERSON") {
+  if (type === "SENT_TO_PERSON" || text.includes("sent to")) {
     return {
       category: "Transfer",
       subcategory: "Personal Transfer",
@@ -245,19 +286,15 @@ export function classifyTransaction(
     };
   }
 
-  // Combine merchant name and description for analysis
-  const text = `${merchantName || ""} ${description}`.toLowerCase();
-
   // Check each category
   let bestMatch: ClassificationResult = {
-    category: "Other",
-    confidence: 0.3,
-    reasoning: "No matching category found",
+    category: "Shopping", // Default to Shopping instead of Other
+    confidence: 0.4,
+    reasoning: "General transaction - likely shopping or service",
   };
 
   for (const [category, rules] of Object.entries(CATEGORY_RULES)) {
     let matches = 0;
-    let totalKeywords = rules.keywords.length;
 
     for (const keyword of rules.keywords) {
       if (text.includes(keyword.toLowerCase())) {

@@ -16,16 +16,18 @@ import {
   MpesaStatementFormat,
 } from "@/types/mpesa";
 import crypto from "crypto";
+import { classifyTransactionWithAI } from "@/lib/ai/transformers-classifier";
+import { classifyTransaction } from "@/lib/ai/mpesa-classifier";
 
-export function normalizeMpesaTransactions(
+export async function normalizeMpesaTransactions(
   rawTransactions: RawMpesaTransaction[]
-): { normalized: NormalizedMpesaTransaction[]; errors: ParseError[] } {
+): Promise<{ normalized: NormalizedMpesaTransaction[]; errors: ParseError[] }> {
   const normalized: NormalizedMpesaTransaction[] = [];
   const errors: ParseError[] = [];
 
   for (let i = 0; i < rawTransactions.length; i++) {
     try {
-      const norm = normalizeTransaction(rawTransactions[i]);
+      const norm = await normalizeTransaction(rawTransactions[i]);
       if (norm) {
         normalized.push(norm);
       } else {
@@ -49,9 +51,9 @@ export function normalizeMpesaTransactions(
   return { normalized, errors };
 }
 
-function normalizeTransaction(
+async function normalizeTransaction(
   raw: RawMpesaTransaction
-): NormalizedMpesaTransaction | null {
+): Promise<NormalizedMpesaTransaction | null> {
   // Must have transaction code and amount
   if (!raw.transactionCode || !raw.amount || raw.amount <= 0) {
     return null;
@@ -86,6 +88,59 @@ function normalizeTransaction(
   // Calculate confidence
   const confidence = calculateConfidence(raw, parseErrors);
 
+  // AI-powered classification with intelligent fallback
+  let category = categorizeTransaction(type, merchantName); // Default rule-based
+  let aiCategory: string | undefined;
+  let aiConfidence: number | undefined;
+
+  try {
+    // Try AI classification first
+    const aiResult = await classifyTransactionWithAI(
+      merchantName,
+      description,
+      Math.abs(raw.amount),
+      type
+    );
+
+    // Get rule-based classification for comparison
+    const ruleResult = classifyTransaction(merchantName, description, type);
+
+    if (aiResult) {
+      // Store AI results regardless
+      aiCategory = aiResult.category;
+      aiConfidence = aiResult.confidence;
+
+      // Use AI if confidence is decent, otherwise use rule-based
+      // But prefer high-confidence rule-based over low-confidence AI
+      if (aiResult.confidence > 0.6) {
+        // High confidence AI
+        category = aiResult.category;
+        console.log(`🤖 AI: ${merchantName || counterpartyName} → ${category} (${(aiResult.confidence * 100).toFixed(1)}%)`);
+      } else if (ruleResult.confidence > 0.8) {
+        // Rule-based has high confidence, prefer it
+        category = ruleResult.category;
+        console.log(`📋 Rule-based (high confidence): ${category}`);
+      } else if (aiResult.confidence > ruleResult.confidence) {
+        // AI has better confidence than rule-based
+        category = aiResult.category;
+        console.log(`🤖 AI (better than rule): ${merchantName || counterpartyName} → ${category}`);
+      } else {
+        // Use rule-based
+        category = ruleResult.category;
+        console.log(`📋 Rule-based: ${category}`);
+      }
+    } else {
+      // AI returned null, use rule-based
+      category = ruleResult.category;
+      console.log(`📋 Rule-based (AI unavailable): ${category}`);
+    }
+  } catch (error) {
+    // AI classification failed, use rule-based fallback
+    const fallbackResult = classifyTransaction(merchantName, description, type);
+    category = fallbackResult.category;
+    console.warn("⚠️ AI classification failed, using rule-based fallback");
+  }
+
   return {
     transactionCode: raw.transactionCode,
     transactionHash,
@@ -95,7 +150,7 @@ function normalizeTransaction(
     transactionDate,
     timestamp: transactionDate.getTime(),
     type,
-    category: categorizeTransaction(type, merchantName),
+    category,
     isIncome,
     counterpartyName,
     counterpartyPhone: normalizePhone(raw.phoneNumber),
@@ -109,6 +164,8 @@ function normalizeTransaction(
     originalText: raw.originalText || "",
     confidence,
     parseErrors,
+    aiCategory,
+    aiConfidence,
   };
 }
 
@@ -347,7 +404,8 @@ function buildDescription(
 }
 
 /**
- * Categorize transaction for analytics
+ * Categorize transaction for analytics (DEPRECATED - use classifyTransaction instead)
+ * This function is kept for backward compatibility but should not be used
  */
 function categorizeTransaction(type: MpesaTransactionType, merchantName: string | null): string {
   // AI will improve this, but provide basic categorization
@@ -355,23 +413,25 @@ function categorizeTransaction(type: MpesaTransactionType, merchantName: string 
   if (type === MpesaTransactionType.WITHDRAW_AT_AGENT || type === MpesaTransactionType.WITHDRAW_AT_ATM)
     return "Cash Withdrawal";
   if (type === MpesaTransactionType.FULIZA_LOAN || type === MpesaTransactionType.FULIZA_REPAYMENT)
-    return "Loan";
+    return "Financial";
 
   // Merchant-based categorization
   if (merchantName) {
     const lower = merchantName.toLowerCase();
     if (/supermarket|grocery|shop|store|mart/i.test(lower)) return "Groceries";
     if (/restaurant|cafe|food|eat/i.test(lower)) return "Dining";
-    if (/fuel|petrol|gas|station/i.test(lower)) return "Fuel";
+    if (/fuel|petrol|gas|station/i.test(lower)) return "Transport";
     if (/pharmacy|hospital|clinic|health/i.test(lower)) return "Healthcare";
     if (/school|university|college|education/i.test(lower)) return "Education";
+    if (/fuliza|overdraft|credit/i.test(lower)) return "Financial";
+    if (/bundle|data|recharge/i.test(lower)) return "Utilities";
   }
 
   // Default categories by type
   if (type === MpesaTransactionType.RECEIVED_FROM_PERSON) return "Income";
   if (type === MpesaTransactionType.SENT_TO_PERSON) return "Transfer";
 
-  return "Other";
+  return "Shopping"; // Default to Shopping instead of Other
 }
 
 /**
