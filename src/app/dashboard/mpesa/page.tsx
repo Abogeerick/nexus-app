@@ -5,27 +5,26 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { MpesaPDFUpload } from "@/components/mpesa/MpesaPDFUpload";
+import { TransactionList } from "./components/TransactionList";
+import { UncategorizedTransactions } from "./components/UncategorizedTransactions";
 import {
   TrendingUp,
   TrendingDown,
   Wallet,
   Users,
-  AlertTriangle,
   Download,
   RefreshCw,
   Calendar,
   Filter,
   Sparkles,
-  Edit,
-  Trash2,
-  Search,
-  X,
-  Save,
+  PieChart,
+  List,
+  LayoutGrid,
 } from "lucide-react";
 import {
   AreaChart,
   Area,
-  PieChart,
+  PieChart as RechartsPieChart,
   Pie,
   Cell,
   XAxis,
@@ -37,7 +36,7 @@ import {
 } from "recharts";
 import { useTheme } from "next-themes";
 
-interface Transaction {
+export interface Transaction {
   id: string;
   transactionCode: string;
   amount: number;
@@ -66,12 +65,6 @@ interface AnalyticsData {
     all: number;
   };
   monthlyTrend: Array<{ month: string; income: number; expense: number }>;
-  insights: {
-    largestIncome: Array<{ transactionCode: string; amount: number; counterparty: string }>;
-    largestExpense: Array<{ transactionCode: string; amount: number; merchant: string }>;
-    mostFrequentMerchant: string;
-    topCategory: string;
-  };
 }
 
 const COLORS = [
@@ -91,11 +84,7 @@ export default function MpesaDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
-  const [selectedType, setSelectedType] = useState<"all" | "income" | "expense">("all");
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  const [showTransactionList, setShowTransactionList] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "transactions">("overview");
   const { theme } = useTheme();
 
   useEffect(() => {
@@ -107,35 +96,16 @@ export default function MpesaDashboardPage() {
   const fetchData = async (startDate?: string, endDate?: string) => {
     setLoading(true);
     try {
-      const period = startDate && endDate ? "custom" : "all";
       const params = new URLSearchParams({
-        period,
+        period: startDate && endDate ? "custom" : "all",
         ...(startDate && { startDate }),
         ...(endDate && { endDate }),
-        ...(searchQuery && { search: searchQuery }),
-        ...(selectedCategory !== "all" && { category: selectedCategory }),
-        ...(selectedType !== "all" && { isIncome: selectedType === "income" ? "true" : "false" }),
       });
 
       const [transResponse, analyticsResponse] = await Promise.all([
         fetch(`/api/mpesa/transactions?${params.toString()}`),
         fetch(`/api/mpesa/analytics?${params.toString()}`),
       ]);
-
-      // Handle errors
-      if (!transResponse.ok) {
-        const errorData = await transResponse.json().catch(() => ({}));
-        console.error("Transactions API error:", errorData);
-        if (transResponse.status === 503) {
-          // Database connection error
-          alert("Database connection error. Please check your database connection.");
-        }
-      }
-
-      if (!analyticsResponse.ok) {
-        const errorData = await analyticsResponse.json().catch(() => ({}));
-        console.error("Analytics API error:", errorData);
-      }
 
       if (transResponse.ok) {
         const transData = await transResponse.json();
@@ -155,727 +125,241 @@ export default function MpesaDashboardPage() {
 
   useEffect(() => {
     fetchData();
-  }, [searchQuery, selectedCategory, selectedType]);
+  }, []);
 
-  const handleEdit = (transaction: Transaction) => {
-    setEditingTransaction(transaction);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editingTransaction) return;
-
+  const handleUpdateCategory = async (id: string, category: string) => {
     try {
-      const response = await fetch(`/api/mpesa/transactions/${editingTransaction.id}`, {
+      const res = await fetch(`/api/mpesa/transactions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          category: editingTransaction.category,
-          merchantName: editingTransaction.merchantName,
-          normalizedMerchantName: editingTransaction.normalizedMerchantName,
-          description: editingTransaction.description,
-          isIncome: editingTransaction.isIncome,
-        }),
+        body: JSON.stringify({ category }),
       });
-
-      if (response.ok) {
-        setEditingTransaction(null);
-        fetchData();
+      if (res.ok) {
+        fetchData(); // Refresh to update lists and analytics
       }
     } catch (error) {
-      console.error("Error updating transaction:", error);
+      console.error("Failed to update category", error);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this transaction?")) return;
-
+    if (!confirm("Are you sure?")) return;
     try {
-      const response = await fetch(`/api/mpesa/transactions/${id}`, {
-        method: "DELETE",
-      });
-
-      if (response.ok) {
-        fetchData();
-      }
+        const res = await fetch(`/api/mpesa/transactions/${id}`, { method: "DELETE" });
+        if (res.ok) fetchData();
     } catch (error) {
-      console.error("Error deleting transaction:", error);
+        console.error("Failed to delete", error);
     }
+  };
+
+  const handleSaveTransaction = async (t: Transaction) => {
+      try {
+        const res = await fetch(`/api/mpesa/transactions/${t.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                category: t.category, 
+                description: t.description,
+                merchantName: t.merchantName
+             }),
+        });
+        if (res.ok) fetchData();
+      } catch (error) {
+          console.error("Failed to save", error);
+      }
   };
 
   const categories = analytics
     ? Object.keys(analytics.categories).sort()
     : ["Groceries", "Dining", "Transport", "Utilities", "Healthcare", "Entertainment", "Financial", "Transfer"];
 
-  const handleDateFilter = () => {
-    if (dateRange?.start && dateRange?.end) {
-      fetchData(dateRange.start, dateRange.end);
-    } else {
-      fetchData();
-    }
-  };
+  const uncategorized = transactions.filter(t => t.category === "Uncategorized" || t.normalizedMerchantName === "Unknown");
 
-  const unknownTransactions = transactions.filter(
-    (t) => !t.normalizedMerchantName || 
-           t.normalizedMerchantName === "Unknown" ||
-           !t.merchantName ||
-           t.merchantName === "Unknown"
-  );
-
-  const hasData = transactions.length > 0;
-
-  if (status === "loading") {
-    return (
-      <DashboardLayout>
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-gray-600 dark:text-gray-400">Loading...</p>
-          </div>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  if (!hasData && !loading) {
-    return (
-      <DashboardLayout user={session?.user ? { name: session.user.name, email: session.user.email } : undefined}>
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-8 px-4">
-          <div className="max-w-7xl mx-auto">
-            {/* Header */}
-            <div className="mb-8">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
-                  <Wallet className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                    M-PESA Financial Dashboard
-                  </h1>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    AI-powered transaction analysis
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Welcome Card */}
-            <div className="mb-8 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl p-8 border border-green-200 dark:border-green-800">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center">
-                  <Sparkles className="w-8 h-8 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                    Welcome to M-PESA Analytics!
-                  </h2>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    Upload your M-PESA statement to unlock AI-powered insights
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white dark:bg-gray-900 rounded-xl p-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-8 h-8 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-                      <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">AI Categorization</h3>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Automatic transaction categorization with 95%+ accuracy
-                  </p>
-                </div>
-                <div className="bg-white dark:bg-gray-900 rounded-xl p-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-                      <TrendingDown className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">Spending Insights</h3>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Discover patterns and trends in your spending habits
-                  </p>
-                </div>
-                <div className="bg-white dark:bg-gray-900 rounded-xl p-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
-                      <Users className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">Merchant Analysis</h3>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Track where your money goes with detailed merchant breakdowns
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Upload Section */}
-            <MpesaPDFUpload onSuccess={fetchData} />
-          </div>
-        </div>
-      </DashboardLayout>
-    );
+  if (loading && !analytics) {
+      return (
+        <DashboardLayout user={session?.user}>
+             <div className="flex items-center justify-center min-h-screen">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600" />
+             </div>
+        </DashboardLayout>
+      );
   }
 
   return (
-    <DashboardLayout user={session?.user ? { name: session.user.name, email: session.user.email } : undefined}>
+    <DashboardLayout user={session?.user}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-8 px-4">
         <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center">
-                <Wallet className="w-7 h-7 text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                  M-PESA Financial Dashboard
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-1">
-                  {analytics?.summary.totalTransactions || transactions.length} transactions analyzed
-                </p>
-              </div>
+          {/* Header & Actions */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-xl">
+                   <Wallet className="w-8 h-8 text-green-600 dark:text-green-400" />
+                </div>
+                M-PESA Dashboard
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2 ml-14">
+                {transactions.length} transactions analyzed
+              </p>
             </div>
+
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowUpload(!showUpload)}
-                className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg hover:scale-105 transition-all font-semibold flex items-center gap-2"
-              >
-                <Download className="w-5 h-5" />
-                Upload Statement
-              </button>
-              <button
-                onClick={() => fetchData()}
-                className="p-3 rounded-xl bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-800 hover:border-green-500 dark:hover:border-green-400 transition-all"
-                title="Refresh data"
-              >
-                <RefreshCw className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-              </button>
-            </div>
-          </div>
-
-        {/* Date Filter */}
-        <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-4">
-            <Calendar className="w-5 h-5 text-gray-500" />
-            <div className="flex gap-3 flex-1">
-              <input
-                type="date"
-                value={dateRange?.start || ""}
-                onChange={(e) =>
-                  setDateRange({ ...dateRange, start: e.target.value } as { start: string; end: string })
-                }
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="Start date"
-              />
-              <input
-                type="date"
-                value={dateRange?.end || ""}
-                onChange={(e) =>
-                  setDateRange({ ...dateRange, end: e.target.value } as { start: string; end: string })
-                }
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="End date"
-              />
-              <button
-                onClick={handleDateFilter}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-              >
-                <Filter className="w-4 h-4" />
-                Filter
-              </button>
-              {dateRange && (
                 <button
-                  onClick={() => {
-                    setDateRange(null);
-                    fetchData();
-                  }}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  onClick={() => setShowUpload(!showUpload)}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-sm hover:shadow-md"
                 >
-                  Clear
+                  <Download className="w-4 h-4" />
+                  Upload Statement
                 </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Upload Modal */}
-        {showUpload && (
-          <div className="mb-8">
-            <MpesaPDFUpload
-              onSuccess={() => {
-                fetchData();
-                setShowUpload(false);
-              }}
-            />
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex items-center justify-center h-96">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600" />
-          </div>
-        ) : (
-          <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Income</p>
-                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                      KES {analytics?.summary.totalIncome.toLocaleString() || 0}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-lg flex items-center justify-center">
-                    <TrendingUp className="w-6 h-6 text-green-600 dark:text-green-400" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Expenses</p>
-                    <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                      KES {analytics?.summary.totalExpense.toLocaleString() || 0}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-red-100 dark:bg-red-900/20 rounded-lg flex items-center justify-center">
-                    <TrendingDown className="w-6 h-6 text-red-600 dark:text-red-400" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Net Balance</p>
-                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                      KES {(analytics?.summary.netAmount || 0).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
-                    <Wallet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Transactions</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {analytics?.summary.totalTransactions || transactions.length}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 rounded-lg flex items-center justify-center">
-                    <Users className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              {/* Monthly Trend */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Income vs Expenses by Month
-                </h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={analytics?.monthlyTrend || []}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} />
-                    <XAxis 
-                      dataKey="month" 
-                      stroke="#9ca3af"
-                      tickFormatter={(value) => {
-                        const [year, month] = value.split("-");
-                        return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
-                      }}
-                    />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: theme === "dark" ? "#1f2937" : "#fff",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                      }}
-                    />
-                    <Legend />
-                    <Area
-                      type="monotone"
-                      dataKey="income"
-                      stackId="1"
-                      stroke="#10b981"
-                      fill="#10b981"
-                      fillOpacity={0.6}
-                      name="Income"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="expense"
-                      stackId="2"
-                      stroke="#ef4444"
-                      fill="#ef4444"
-                      fillOpacity={0.6}
-                      name="Expenses"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Category Breakdown */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Spending by Category
-                </h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={Object.entries(analytics?.categories || {})
-                        .filter(([_, data]) => data.total > 0)
-                        .map(([name, data]) => ({ name, value: data.total }))
-                        .sort((a, b) => b.value - a.value)
-                        .slice(0, 6)}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) =>
-                        `${name}: ${((percent || 0) * 100).toFixed(0)}%`
-                      }
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {Object.entries(analytics?.categories || {})
-                        .filter(([_, data]) => data.total > 0)
-                        .slice(0, 6)
-                        .map((_, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: theme === "dark" ? "#1f2937" : "#fff",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Top Merchants */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 mb-8">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Top Spending Merchants
-              </h3>
-              <div className="space-y-4">
-                {analytics?.merchants.top
-                  .filter((m) => m.merchant !== "Unknown")
-                  .slice(0, 10)
-                  .map((merchant, idx) => (
-                    <div key={idx} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold"
-                          style={{ backgroundColor: COLORS[idx % COLORS.length] }}
-                        >
-                          {idx + 1}
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-white">
-                            {merchant.merchant}
-                          </p>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            {merchant.count} transactions
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-lg font-bold text-gray-900 dark:text-white">
-                        KES {merchant.amount?.toLocaleString()}
-                      </p>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            {/* Search and Filter Bar */}
-            <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex-1 min-w-[200px]">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search transactions..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                    {searchQuery && (
-                      <button
-                        onClick={() => setSearchQuery("")}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="all">All Categories</option>
-                  {categories.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={selectedType}
-                  onChange={(e) => setSelectedType(e.target.value as "all" | "income" | "expense")}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="all">All Types</option>
-                  <option value="income">Income Only</option>
-                  <option value="expense">Expenses Only</option>
-                </select>
                 <button
-                  onClick={() => setShowTransactionList(!showTransactionList)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                   onClick={() => fetchData()}
+                   className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                 >
-                  {showTransactionList ? "Hide" : "Show"} Transactions
+                    <RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                 </button>
-              </div>
             </div>
+          </div>
 
-            {/* Transaction List */}
-            {showTransactionList && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  All Transactions ({transactions.length})
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200 dark:border-gray-700">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Date
-                        </th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Code
-                        </th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Description
-                        </th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Category
-                        </th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Merchant
-                        </th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Amount
-                        </th>
-                        <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transactions.slice(0, 50).map((transaction) => (
-                        <tr
-                          key={transaction.id}
-                          className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                        >
-                          <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
-                            {new Date(transaction.transactionDate).toLocaleDateString("en-KE", {
-                              dateStyle: "short",
-                            })}
-                          </td>
-                          <td className="py-3 px-4 text-sm font-mono text-gray-600 dark:text-gray-400">
-                            {transaction.transactionCode}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-900 dark:text-white max-w-xs truncate">
-                            {editingTransaction?.id === transaction.id ? (
-                              <input
-                                type="text"
-                                value={editingTransaction.description || ""}
-                                onChange={(e) =>
-                                  setEditingTransaction({
-                                    ...editingTransaction,
-                                    description: e.target.value,
-                                  })
-                                }
-                                className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                              />
-                            ) : (
-                              transaction.description || "N/A"
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            {editingTransaction?.id === transaction.id ? (
-                              <select
-                                value={editingTransaction.category}
-                                onChange={(e) =>
-                                  setEditingTransaction({
-                                    ...editingTransaction,
-                                    category: e.target.value,
-                                  })
-                                }
-                                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                              >
-                                {categories.map((cat) => (
-                                  <option key={cat} value={cat}>
-                                    {cat}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                                {transaction.category}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
-                            {editingTransaction?.id === transaction.id ? (
-                              <input
-                                type="text"
-                                value={editingTransaction.merchantName || ""}
-                                onChange={(e) =>
-                                  setEditingTransaction({
-                                    ...editingTransaction,
-                                    merchantName: e.target.value,
-                                  })
-                                }
-                                className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                              />
-                            ) : (
-                              transaction.merchantName || transaction.normalizedMerchantName || "N/A"
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <span
-                              className={`text-sm font-semibold ${
-                                transaction.isIncome
-                                  ? "text-green-600 dark:text-green-400"
-                                  : "text-red-600 dark:text-red-400"
-                              }`}
-                            >
-                              {transaction.isIncome ? "+" : "-"}KES {transaction.amount.toLocaleString()}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center justify-center gap-2">
-                              {editingTransaction?.id === transaction.id ? (
-                                <>
-                                  <button
-                                    onClick={handleSaveEdit}
-                                    className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
-                                    title="Save"
-                                  >
-                                    <Save className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingTransaction(null)}
-                                    className="p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                                    title="Cancel"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    onClick={() => handleEdit(transaction)}
-                                    className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-                                    title="Edit"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(transaction.id)}
-                                    className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {transactions.length > 50 && (
-                    <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-4">
-                      Showing first 50 transactions. Use filters to narrow down results.
-                    </p>
-                  )}
-                </div>
+           {/* Upload Modal */}
+           {showUpload && (
+              <div className="mb-8">
+                <MpesaPDFUpload onSuccess={() => { setShowUpload(false); fetchData(); }} />
               </div>
             )}
 
-            {/* Unknown Transactions */}
-            {unknownTransactions.length > 0 && (
-              <div className="bg-amber-50 dark:bg-amber-900/10 rounded-xl p-6 border border-amber-200 dark:border-amber-800">
-                <div className="flex items-start gap-4">
-                  <AlertTriangle className="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-1" />
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-amber-900 dark:text-amber-100 mb-2">
-                      {unknownTransactions.length} Uncategorized Transactions
-                    </h3>
-                    <p className="text-sm text-amber-800 dark:text-amber-200 mb-4">
-                      These transactions couldn't be automatically categorized. Review them to
-                      improve your insights.
-                    </p>
-                    <div className="max-h-96 overflow-y-auto space-y-2">
-                      {unknownTransactions.slice(0, 20).map((t) => (
-                        <div
-                          key={t.id}
-                          className="bg-white dark:bg-gray-800 rounded-lg p-4 flex items-center justify-between"
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-1">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                {t.transactionCode}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {new Date(t.transactionDate).toLocaleString("en-KE", {
-                                  dateStyle: "medium",
-                                  timeStyle: "short",
-                                })}
-                              </p>
-                            </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                              {t.description || "No description available"}
-                            </p>
-                          </div>
-                          <p className="text-sm font-semibold text-gray-900 dark:text-white ml-4">
-                            KES {t.amount.toLocaleString()}
-                          </p>
-                        </div>
-                      ))}
-                      {unknownTransactions.length > 20 && (
-                        <p className="text-sm text-amber-700 dark:text-amber-300 text-center mt-4">
-                          ... and {unknownTransactions.length - 20} more
+          {/* Uncategorized Alert (Always visible if exists) */}
+          <UncategorizedTransactions 
+            transactions={uncategorized} 
+            onUpdateCategory={handleUpdateCategory}
+            categories={categories}
+          />
+
+          {/* Tabs */}
+          <div className="flex items-center gap-4 mb-6 border-b border-gray-200 dark:border-gray-800">
+            <button
+                onClick={() => setActiveTab("overview")}
+                className={`pb-3 px-2 flex items-center gap-2 font-medium transition-colors relative ${
+                    activeTab === "overview" 
+                    ? "text-green-600 dark:text-green-400" 
+                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+            >
+                <LayoutGrid className="w-4 h-4" />
+                Overview
+                {activeTab === "overview" && (
+                    <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-600 dark:bg-green-400 rounded-t-full" />
+                )}
+            </button>
+            <button
+                onClick={() => setActiveTab("transactions")}
+                className={`pb-3 px-2 flex items-center gap-2 font-medium transition-colors relative ${
+                    activeTab === "transactions" 
+                    ? "text-green-600 dark:text-green-400" 
+                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+            >
+                <List className="w-4 h-4" />
+                Transactions
+                {activeTab === "transactions" && (
+                    <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-600 dark:bg-green-400 rounded-t-full" />
+                )}
+            </button>
+          </div>
+
+          {/* Overview Tab */}
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+                 {/* Summary Cards */}
+                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Total Income</p>
+                        <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
+                            KES {(analytics?.summary?.totalIncome ?? 0).toLocaleString()}
                         </p>
-                      )}
                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Total Expenses</p>
+                        <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
+                            KES {(analytics?.summary?.totalExpense ?? 0).toLocaleString()}
+                        </p>
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Net Balance</p>
+                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+                            KES {(analytics?.summary?.netAmount ?? 0).toLocaleString()}
+                        </p>
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Savings Rate</p>
+                        <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">
+                            {(analytics?.summary?.savingsRate ?? 0).toFixed(1)}%
+                        </p>
+                    </div>
+                 </div>
+
+                 {/* Charts */}
+                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <h3 className="font-bold text-gray-900 dark:text-white mb-4">Income vs Expenses</h3>
+                        <div className="h-[300px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={analytics?.monthlyTrend || []}>
+                                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                                    <XAxis dataKey="month" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                                    <Tooltip 
+                                        contentStyle={{ backgroundColor: theme === 'dark' ? '#1f2937' : '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    />
+                                    <Area type="monotone" dataKey="income" stroke="#10b981" fill="#10b981" fillOpacity={0.2} />
+                                    <Area type="monotone" dataKey="expense" stroke="#ef4444" fill="#ef4444" fillOpacity={0.2} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <h3 className="font-bold text-gray-900 dark:text-white mb-4">Spending by Category</h3>
+                         <div className="h-[300px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <RechartsPieChart>
+                                    <Pie
+                                        data={Object.entries(analytics?.categories || {})
+                                            .map(([name, data]) => ({ name, value: data.total }))
+                                            .sort((a, b) => b.value - a.value)
+                                            .slice(0, 5)
+                                        }
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {Object.entries(analytics?.categories || {}).map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend verticalAlign="bottom" height={36}/>
+                                </RechartsPieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                 </div>
+            </div>
+          )}
+
+          {/* Transactions Tab */}
+          {activeTab === "transactions" && (
+            <TransactionList 
+                transactions={transactions} 
+                categories={categories}
+                onEdit={() => {}} 
+                onDelete={handleDelete}
+                onSave={handleSaveTransaction}
+            />
+          )}
+
         </div>
       </div>
     </DashboardLayout>
