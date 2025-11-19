@@ -468,7 +468,7 @@ export default function MpesaDashboardPage() {
                         </div>
                       </div>
                       <p className="text-lg font-bold text-gray-900 dark:text-white">
-                        KES {merchant.amount.toLocaleString()}
+                        KES {merchant.amount?.toLocaleString()}
                       </p>
                     </div>
                   ))}
