@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -19,10 +19,11 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const userId = session.user.id;
     const transaction = await prisma.mpesaTransaction.findFirst({
       where: {
-        id: params.id,
+        id,
         userId,
       },
     });
@@ -56,7 +57,7 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -64,13 +65,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const userId = session.user.id;
     const body = await request.json();
 
     // Verify transaction belongs to user
     const existing = await prisma.mpesaTransaction.findFirst({
       where: {
-        id: params.id,
+        id,
         userId,
       },
     });
@@ -94,7 +96,7 @@ export async function PATCH(
     if (body.counterpartyPhone !== undefined) updateData.counterpartyPhone = body.counterpartyPhone;
 
     const transaction = await prisma.mpesaTransaction.update({
-      where: { id: params.id },
+      where: { id },
       data: updateData,
     });
 
@@ -123,7 +125,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -131,12 +133,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const userId = session.user.id;
 
     // Verify transaction belongs to user
     const existing = await prisma.mpesaTransaction.findFirst({
       where: {
-        id: params.id,
+        id,
         userId,
       },
     });
@@ -146,7 +149,7 @@ export async function DELETE(
     }
 
     await prisma.mpesaTransaction.delete({
-      where: { id: params.id },
+      where: { id },
     });
 
     return NextResponse.json({ success: true });
@@ -161,5 +164,6 @@ export async function DELETE(
     );
   }
 }
+
 
 

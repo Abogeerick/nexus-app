@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -19,10 +19,11 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const userId = session.user.id;
     const budget = await prisma.budget.findFirst({
       where: {
-        id: params.id,
+        id,
         userId,
       },
     });
@@ -55,7 +56,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -63,6 +64,7 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const userId = session.user.id;
     const body = await request.json();
     const { category, amount, period, isActive } = body;
@@ -70,7 +72,7 @@ export async function PUT(
     // Verify budget belongs to user
     const existing = await prisma.budget.findFirst({
       where: {
-        id: params.id,
+        id,
         userId,
       },
     });
@@ -93,7 +95,7 @@ export async function PUT(
     if (isActive !== undefined) updateData.isActive = isActive;
 
     const budget = await prisma.budget.update({
-      where: { id: params.id },
+      where: { id },
       data: updateData,
     });
 
@@ -121,7 +123,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -129,12 +131,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const userId = session.user.id;
 
     // Verify budget belongs to user
     const existing = await prisma.budget.findFirst({
       where: {
-        id: params.id,
+        id,
         userId,
       },
     });
@@ -144,7 +147,7 @@ export async function DELETE(
     }
 
     await prisma.budget.delete({
-      where: { id: params.id },
+      where: { id },
     });
 
     return NextResponse.json({ success: true });
@@ -159,5 +162,6 @@ export async function DELETE(
     );
   }
 }
+
 
 

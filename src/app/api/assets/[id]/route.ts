@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -12,9 +12,11 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
+
     // Verify ownership
     const asset = await prisma.asset.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!asset || asset.userId !== session.user.id) {
@@ -22,7 +24,7 @@ export async function DELETE(
     }
 
     await prisma.asset.delete({
-      where: { id: params.id },
+      where: { id },
     });
 
     return NextResponse.json({ success: true });
@@ -34,7 +36,7 @@ export async function DELETE(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -42,12 +44,13 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const body = await req.json();
     const { name, symbol, type, quantity, purchasePrice, currency, exchange, notes } = body;
 
      // Verify ownership
      const existingAsset = await prisma.asset.findUnique({
-        where: { id: params.id },
+        where: { id },
       });
   
       if (!existingAsset || existingAsset.userId !== session.user.id) {
@@ -55,7 +58,7 @@ export async function PUT(
       }
 
     const asset = await prisma.asset.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         name,
         symbol,

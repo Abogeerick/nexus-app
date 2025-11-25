@@ -88,6 +88,29 @@ export const authConfig: NextAuthConfig = {
       const isOnDashboard = nextUrl.pathname.startsWith("/dashboard");
       const isOnAdmin = nextUrl.pathname.startsWith("/admin");
       const isOnAuth = nextUrl.pathname.startsWith("/auth");
+      
+      // Auth pages that should always be accessible
+      const publicAuthPages = [
+        "/auth/signin",
+        "/auth/signup",
+        "/auth/forgot-password",
+        "/auth/reset-password",
+        "/auth/verify-email",
+      ];
+      
+      const isPublicAuthPage = publicAuthPages.some(path => 
+        nextUrl.pathname === path || nextUrl.pathname.startsWith(path + "/")
+      );
+
+      // Allow unauthenticated users to access public auth pages
+      if (isPublicAuthPage && !isLoggedIn) {
+        return true;
+      }
+
+      // Redirect authenticated users away from signin/signup pages
+      if ((nextUrl.pathname === "/auth/signin" || nextUrl.pathname === "/auth/signup") && isLoggedIn) {
+        return Response.redirect(new URL("/dashboard", nextUrl));
+      }
 
       // Dashboard requires authentication
       if (isOnDashboard && !isLoggedIn) {
@@ -100,11 +123,6 @@ export const authConfig: NextAuthConfig = {
         if (auth.user.role !== "ADMIN") {
           return Response.redirect(new URL("/dashboard", nextUrl));
         }
-      }
-
-      // Redirect authenticated users away from auth pages
-      if (isOnAuth && isLoggedIn) {
-        return Response.redirect(new URL("/dashboard", nextUrl));
       }
 
       return true;
