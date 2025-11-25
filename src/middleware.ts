@@ -1,68 +1,42 @@
 /**
- * Next.js Middleware
+ * Next.js Middleware (Edge-Compatible)
  *
- * Protects routes based on authentication status and roles
- * Runs before every request
+ * Minimal middleware for Edge Functions - authentication handled by NextAuth
+ * This middleware only handles basic route protection to keep bundle size small
  */
 
-import { auth } from "@/lib/auth/auth";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default auth((req) => {
-  const { nextUrl } = req;
-  const isLoggedIn = !!req.auth;
-  const userRole = req.auth?.user?.role;
+export function middleware(request: NextRequest) {
+  const { nextUrl } = request;
+  const pathname = nextUrl.pathname;
 
-  const isApiAuthRoute = nextUrl.pathname.startsWith("/api/auth");
-  const isPublicRoute = nextUrl.pathname === "/" || nextUrl.pathname.startsWith("/auth");
-  const isDashboard = nextUrl.pathname.startsWith("/dashboard");
-  const isAdmin = nextUrl.pathname.startsWith("/admin");
+  // Check for any NextAuth session cookie (v5 uses various cookie names)
+  const hasSession = 
+    request.cookies.has("authjs.session-token") ||
+    request.cookies.has("__Secure-authjs.session-token") ||
+    request.cookies.has("next-auth.session-token") ||
+    request.cookies.has("__Secure-next-auth.session-token");
+
+  const isApiAuthRoute = pathname.startsWith("/api/auth");
+  const isDashboard = pathname.startsWith("/dashboard");
+  const isAdmin = pathname.startsWith("/admin");
   
-  // Auth pages that should be accessible even when logged in
-  const alwaysAccessibleAuthPages = [
-    "/auth/signout",
-    "/auth/forgot-password",
-    "/auth/reset-password",
-    "/auth/verify-email",
-  ];
-
-  // Allow API auth routes
+  // Always allow API auth routes
   if (isApiAuthRoute) {
-    return;
+    return NextResponse.next();
   }
 
-  // Redirect logged-in users away from signin/signup pages only
-  if (isPublicRoute && isLoggedIn) {
-    const isAlwaysAccessible = alwaysAccessibleAuthPages.some(path => 
-      nextUrl.pathname.startsWith(path)
-    );
-    
-    // Only redirect from signin/signup pages
-    if (!isAlwaysAccessible && (
-      nextUrl.pathname === "/auth/signin" || 
-      nextUrl.pathname === "/auth/signup"
-    )) {
-      return Response.redirect(new URL("/dashboard", nextUrl));
-    }
+  // Protect dashboard and admin routes - redirect to signin if no session
+  // Note: Full auth check happens in page components and API routes
+  if ((isDashboard || isAdmin) && !hasSession) {
+    const callbackUrl = encodeURIComponent(pathname + nextUrl.search);
+    return NextResponse.redirect(new URL(`/auth/signin?callbackUrl=${callbackUrl}`, nextUrl));
   }
 
-  // Protect dashboard routes
-  if (isDashboard && !isLoggedIn) {
-    const callbackUrl = encodeURIComponent(nextUrl.pathname + nextUrl.search);
-    return Response.redirect(new URL(`/auth/signin?callbackUrl=${callbackUrl}`, nextUrl));
-  }
-
-  // Protect admin routes
-  if (isAdmin) {
-    if (!isLoggedIn) {
-      return Response.redirect(new URL("/auth/signin", nextUrl));
-    }
-    if (userRole !== "ADMIN") {
-      return Response.redirect(new URL("/dashboard", nextUrl));
-    }
-  }
-
-  return;
-});
+  return NextResponse.next();
+}
 
 // Configure which routes the middleware runs on
 export const config = {
