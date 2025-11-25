@@ -20,7 +20,7 @@ interface Budget {
   id: string;
   category: string;
   amount: number;
-  period: "WEEKLY" | "MONTHLY" | "YEARLY" | "weekly" | "monthly" | "yearly";
+  period: "WEEKLY" | "MONTHLY" | "YEARLY";
   startDate: string;
   endDate?: string;
   isActive: boolean;
@@ -156,10 +156,12 @@ export default function MpesaBudgetsPage() {
 
   const handleEdit = (budget: Budget) => {
     setEditingBudget(budget);
+    // Normalize period to lowercase for form
+    const normalizedPeriod = budget.period.toLowerCase() as "monthly" | "weekly" | "yearly";
     setFormData({
       category: budget.category,
       amount: budget.amount.toString(),
-      period: budget.period,
+      period: normalizedPeriod,
     });
     setShowAddModal(true);
   };
