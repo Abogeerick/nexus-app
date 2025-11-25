@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Wallet, Mail, Lock, ArrowRight, Sparkles } from "lucide-react";
+import { LoadingOverlay, ButtonLoader } from "@/components/loading";
 
 function SignInForm() {
   const router = useRouter();
@@ -51,7 +52,9 @@ function SignInForm() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-green-50/30 to-emerald-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
+    <>
+      <LoadingOverlay isLoading={loading} text="Signing you in..." variant="logo" />
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-green-50/30 to-emerald-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       {/* Left Side - Branding */}
       <div className="hidden lg:flex lg:w-1/2 relative bg-gradient-to-br from-green-600 to-emerald-600 p-12 items-center justify-center overflow-hidden">
         <div className="absolute inset-0 bg-grid-white/10"></div>
@@ -185,13 +188,10 @@ function SignInForm() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-4 font-bold text-white transition-all hover:shadow-2xl hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2"
+                className="w-full rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-4 font-bold text-white transition-all hover:shadow-2xl hover:scale-[1.02] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
               >
                 {loading ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Signing in...
-                  </>
+                  <ButtonLoader text="Signing in..." />
                 ) : (
                   <>
                     Sign In
@@ -226,6 +226,7 @@ function SignInForm() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

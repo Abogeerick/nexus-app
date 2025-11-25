@@ -7,6 +7,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { MpesaPDFUpload } from "@/components/mpesa/MpesaPDFUpload";
 import { TransactionList } from "./components/TransactionList";
 import { UncategorizedTransactions } from "./components/UncategorizedTransactions";
+import { LoadingOverlay } from "@/components/loading";
 import {
   TrendingUp,
   TrendingDown,
@@ -178,15 +179,14 @@ export default function MpesaDashboardPage() {
   if (loading && !analytics) {
       return (
         <DashboardLayout user={session?.user}>
-             <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600" />
-             </div>
+          <LoadingOverlay isLoading={true} text="Loading M-PESA data..." variant="logo" />
         </DashboardLayout>
       );
   }
 
   return (
     <DashboardLayout user={session?.user}>
+      <LoadingOverlay isLoading={loading} text="Refreshing data..." variant="pulse" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-8 px-4">
         <div className="max-w-7xl mx-auto">
           {/* Header & Actions */}

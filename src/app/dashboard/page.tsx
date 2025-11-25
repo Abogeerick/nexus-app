@@ -19,6 +19,7 @@ import {
   Download,
   Activity
 } from "lucide-react";
+import { LoadingOverlay, LoadingSpinner } from "@/components/loading";
 
 interface DashboardSummary {
   mpesaBalance: number;
@@ -64,11 +65,9 @@ export default function DashboardPage() {
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      </div>
+      <DashboardLayout>
+        <LoadingOverlay isLoading={true} text="Loading dashboard..." variant="logo" />
+      </DashboardLayout>
     );
   }
 
@@ -119,6 +118,7 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout user={session.user}>
+      <LoadingOverlay isLoading={loading} text="Loading your dashboard..." variant="logo" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-8">
         {/* Header */}
         <div className="mb-8">

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Wallet, Mail, Lock, User, ArrowRight, CheckCircle2 } from "lucide-react";
+import { LoadingOverlay, ButtonLoader } from "@/components/loading";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -87,7 +88,9 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-green-50/30 to-emerald-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 p-4">
+    <>
+      <LoadingOverlay isLoading={loading} text="Creating your account..." variant="logo" />
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-green-50/30 to-emerald-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 p-4">
       <div className="flex-1 flex items-center justify-center">
         <div className="w-full max-w-md">
           {/* Logo */}
@@ -216,13 +219,10 @@ export default function SignUpPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-4 font-bold text-white transition-all hover:shadow-2xl hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2"
+                className="w-full rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-4 font-bold text-white transition-all hover:shadow-2xl hover:scale-[1.02] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
               >
                 {loading ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Creating account...
-                  </>
+                  <ButtonLoader text="Creating account..." />
                 ) : (
                   <>
                     Create Account
@@ -257,6 +257,7 @@ export default function SignUpPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
