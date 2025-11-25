@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-  import { usePathname } from "next/navigation";
-  import { useTheme } from "next-themes";
+import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
+import { motion } from "framer-motion";
   import {
     LayoutDashboard,
     Wallet,
@@ -35,7 +36,9 @@ interface SidebarProps {
 export default function Sidebar({ user, onLogout }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [loadingHref, setLoadingHref] = useState<string | null>(null);
   const pathname = usePathname();
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
 
   const navigation = [
@@ -77,6 +80,11 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
 
+  // Clear loading state when pathname changes
+  useEffect(() => {
+    setLoadingHref(null);
+  }, [pathname]);
+
   return (
     <>
       {/* Mobile menu button */}
@@ -107,7 +115,17 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
         <div className="flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800">
-            <Link href="/dashboard" className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (pathname !== "/dashboard" && setLoadingHref && router) {
+                  setLoadingHref("/dashboard");
+                  setTimeout(() => {
+                    router.push("/dashboard");
+                  }, 50);
+                }
+              }}
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+            >
               <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
                 <Wallet className="w-6 h-6 text-white" />
               </div>
@@ -121,7 +139,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
                   </p>
                 </div>
               )}
-            </Link>
+            </button>
             <button
               onClick={() => setCollapsed(!collapsed)}
               className="hidden lg:block p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
@@ -158,12 +176,18 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
                     item={item}
                     collapsed={collapsed}
                     isActive={isActive}
+                    loadingHref={loadingHref}
+                    setLoadingHref={setLoadingHref}
+                    router={router}
                   />
                 ) : (
                   <NavItem
                     item={item}
                     collapsed={collapsed}
                     isActive={isActive(item.href || "")}
+                    loadingHref={loadingHref}
+                    setLoadingHref={setLoadingHref}
+                    router={router}
                   />
                 )}
               </div>
@@ -197,6 +221,9 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
                 item={item}
                 collapsed={collapsed}
                 isActive={isActive(item.href)}
+                loadingHref={loadingHref}
+                setLoadingHref={setLoadingHref}
+                router={router}
               />
             ))}
             
@@ -225,30 +252,66 @@ function NavItem({
   item,
   collapsed,
   isActive,
+  loadingHref,
+  setLoadingHref,
+  router,
 }: {
   item: any;
   collapsed: boolean;
   isActive: boolean;
+  loadingHref?: string | null;
+  setLoadingHref?: (href: string | null) => void;
+  router?: any;
 }) {
   const Icon = item.icon;
+  const isLoading = loadingHref === item.href;
+  const pathname = usePathname();
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (item.href && setLoadingHref && router) {
+      // Only show loading if navigating to a different page
+      if (pathname !== item.href) {
+        setLoadingHref(item.href);
+        // Navigate after a tiny delay to show the loading state
+        setTimeout(() => {
+          router.push(item.href);
+          // Clear loading state after navigation completes
+          setTimeout(() => {
+            setLoadingHref(null);
+          }, 100);
+        }, 50);
+      }
+    }
+  };
 
   return (
-    <Link
-      href={item.href}
+    <button
+      onClick={handleClick}
+      disabled={isLoading}
       className={`
-        flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
+        w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
         ${collapsed ? "justify-center" : ""}
         ${
           isActive
             ? "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400"
             : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
         }
+        ${isLoading ? "opacity-70 cursor-wait" : ""}
       `}
       title={collapsed ? item.name : undefined}
     >
       <div className="relative">
-        <Icon className="w-5 h-5 flex-shrink-0" />
-        {item.badge && typeof item.badge === "number" && (
+        {isLoading ? (
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+            className="w-5 h-5 border-2 border-current border-t-transparent rounded-full"
+          />
+        ) : (
+          <Icon className="w-5 h-5 flex-shrink-0" />
+        )}
+        {item.badge && typeof item.badge === "number" && !isLoading && (
           <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
             {item.badge}
           </span>
@@ -269,14 +332,14 @@ function NavItem({
               {item.badge}
             </span>
           )}
-          {item.badge && typeof item.badge === "number" && (
+          {item.badge && typeof item.badge === "number" && !isLoading && (
             <span className="w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
               {item.badge}
             </span>
           )}
         </div>
       )}
-    </Link>
+    </button>
   );
 }
 
@@ -284,14 +347,21 @@ function NavItemWithChildren({
   item,
   collapsed,
   isActive,
+  loadingHref,
+  setLoadingHref,
+  router,
 }: {
   item: any;
   collapsed: boolean;
   isActive: (href: string) => boolean;
+  loadingHref?: string | null;
+  setLoadingHref?: (href: string | null) => void;
+  router?: any;
 }) {
   const [open, setOpen] = useState(false);
   const Icon = item.icon;
   const anyChildActive = item.children.some((child: any) => isActive(child.href));
+  const pathname = usePathname();
 
   if (collapsed) {
     return (
@@ -320,22 +390,49 @@ function NavItemWithChildren({
             </div>
             {item.children.map((child: any) => {
               const ChildIcon = child.icon;
+              const childIsLoading = loadingHref === child.href;
+              
+              const handleChildClick = (e: React.MouseEvent) => {
+                e.preventDefault();
+                if (child.href && setLoadingHref && router) {
+                  if (pathname !== child.href) {
+                    setLoadingHref(child.href);
+                    setTimeout(() => {
+                      router.push(child.href);
+                      setTimeout(() => {
+                        setLoadingHref(null);
+                      }, 100);
+                    }, 50);
+                  }
+                }
+              };
+
               return (
-                <Link
+                <button
                   key={child.name}
-                  href={child.href}
+                  onClick={handleChildClick}
+                  disabled={childIsLoading}
                   className={`
-                    flex items-center gap-3 px-3 py-2 transition-colors
+                    w-full flex items-center gap-3 px-3 py-2 transition-colors
                     ${
                       isActive(child.href)
                         ? "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400"
                         : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                     }
+                    ${childIsLoading ? "opacity-70 cursor-wait" : ""}
                   `}
                 >
-                  <ChildIcon className="w-4 h-4" />
+                  {childIsLoading ? (
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                      className="w-4 h-4 border-2 border-current border-t-transparent rounded-full"
+                    />
+                  ) : (
+                    <ChildIcon className="w-4 h-4" />
+                  )}
                   <span className="text-sm font-medium">{child.name}</span>
-                </Link>
+                </button>
               );
             })}
           </div>
@@ -372,22 +469,49 @@ function NavItemWithChildren({
         <div className="ml-8 mt-1 space-y-1">
           {item.children.map((child: any) => {
             const ChildIcon = child.icon;
+            const childIsLoading = loadingHref === child.href;
+            
+            const handleChildClick = (e: React.MouseEvent) => {
+              e.preventDefault();
+              if (child.href && setLoadingHref && router) {
+                if (pathname !== child.href) {
+                  setLoadingHref(child.href);
+                  setTimeout(() => {
+                    router.push(child.href);
+                    setTimeout(() => {
+                      setLoadingHref(null);
+                    }, 100);
+                  }, 50);
+                }
+              }
+            };
+
             return (
-              <Link
+              <button
                 key={child.name}
-                href={child.href}
+                onClick={handleChildClick}
+                disabled={childIsLoading}
                 className={`
-                  flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
+                  w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
                   ${
                     isActive(child.href)
                       ? "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400"
                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }
+                  ${childIsLoading ? "opacity-70 cursor-wait" : ""}
                 `}
               >
-                <ChildIcon className="w-4 h-4 flex-shrink-0" />
+                {childIsLoading ? (
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                    className="w-4 h-4 border-2 border-current border-t-transparent rounded-full"
+                  />
+                ) : (
+                  <ChildIcon className="w-4 h-4 flex-shrink-0" />
+                )}
                 <span className="text-sm font-medium">{child.name}</span>
-              </Link>
+              </button>
             );
           })}
         </div>
